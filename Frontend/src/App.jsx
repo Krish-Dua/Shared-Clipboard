@@ -4,13 +4,8 @@ import Room from './pages/Room';
 import { useState, useEffect } from 'react';
 
 function App() {
-  const [username,setUsername]= useState("")
-  useEffect(() => {
-    const user = localStorage.getItem("usernamee")
-    if(user){
-      setUsername(user)
-    }
-  }, []);
+  const [username,setUsername]= useState(localStorage.getItem("username") ||"")
+  
   return (
     <Router>
       <Routes>

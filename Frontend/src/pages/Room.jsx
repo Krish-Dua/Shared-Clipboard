@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState,useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { socket } from '../socket';
 import { 
   Clipboard, 
   Moon, 
@@ -123,6 +124,23 @@ export default function Room() {
   const [newContent, setNewContent] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [copiedRoomLink, setCopiedRoomLink] = useState(false);
+
+   useEffect(() => {
+     socket.connect();
+    socket.on("connect", () => {
+      console.log("Connected:", socket.id);
+    });
+
+
+
+
+
+
+    return () => {
+      socket.off("connect");
+       socket.disconnect();
+    };
+  }, [roomId]);
 
   const handleCopy = (id, text) => {
     navigator.clipboard.writeText(text);

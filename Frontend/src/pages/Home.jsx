@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 export default function Home({ username, setUsername }) {
-  const [createRoomId, setCreateRoomId] = useState('');
+  const [createRoomId, setCreateRoomId] = useState(username || '');
   const [joinRoomId, setJoinRoomId] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [nameInput, setNameInput] = useState(username || '');

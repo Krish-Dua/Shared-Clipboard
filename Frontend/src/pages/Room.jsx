@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { 
   Clipboard, 
   Moon, 
+  Sun,
   User, 
   Copy, 
   Check, 
@@ -15,76 +16,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 
-const INITIAL_CLIPS = [
-  {
-    id: 'clip-1',
-    sender: 'Krish',
-    content: `export const verifyToken = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    return res.status(403).json({ error: 'Invalid or expired token' });
-  }
-};`,
-    createdAt: '2 mins ago'
-  },
-  {
-    id: 'clip-2',
-    sender: 'Alex',
-    content: 'https://tailwindcss.com/docs/styling-with-utility-classes',
-    createdAt: '5 mins ago'
-  },
-  {
-    id: 'clip-3',
-    sender: 'Sarah',
-    content: `Sprint release roadmap:
-1. Verify WebSocket reconnection under latency
-2. Test in-memory room auto-cleanup on disconnect
-3. Responsive masonry layout checks on mobile & desktop
-4. One-click copy with immediate visual feedback
-5. Validate zero database logging and memory garbage collection`,
-    createdAt: '12 mins ago'
-  },
-  {
-    id: 'clip-4',
-    sender: 'Krish',
-    content: `{
-  "name": "shared-clipboard",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build"
-  }
-}`,
-    createdAt: '18 mins ago'
-  },
-  {
-    id: 'clip-5',
-    sender: 'DevBot',
-    content: 'git checkout -b feature/masonry-wall && npm run dev',
-    createdAt: '25 mins ago'
-  },
-  {
-    id: 'clip-6',
-    sender: 'Sarah',
-    content: 'Meeting link for 4 PM sync: https://meet.google.com/abc-defg-hij',
-    createdAt: '30 mins ago'
-  },
-  {
-    id: 'clip-7',
-    sender: 'Krish',
-    content: 'Remember to run `npm run build` before pushing to verify no bundle errors.',
-    createdAt: '35 mins ago'
-  }
-];
+
 
 const COLORS = [
   'bg-indigo-500', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500',
@@ -117,13 +49,20 @@ const getClipType = (content = '') => {
   return 'text';
 };
 
-export default function Room() {
+export default function Room({username}) {
   const { roomId } = useParams();
   const navigate = useNavigate();
-  const [clips, setClips] = useState(INITIAL_CLIPS);
+  const [clips, setClips] = useState([]);
   const [newContent, setNewContent] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [copiedRoomLink, setCopiedRoomLink] = useState(false);
+  const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
+
+  if(theme === "dark"){
+    document.documentElement.classList.add("dark");
+  } else {
+    document.documentElement.classList.remove("dark");
+  }
 
    useEffect(() => {
      socket.connect();
@@ -178,12 +117,12 @@ export default function Room() {
       <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Link to="/" className="flex items-center gap-2 text-slate-900 dark:text-white font-bold tracking-tight hover:opacity-80 transition">
+            <span  className="flex items-center gap-2 text-slate-900 dark:text-white font-bold tracking-tight hover:opacity-80 transition">
               <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shadow-indigo-500/20">
                 <Clipboard className="w-4 h-4" />
               </div>
               <span className="hidden sm:inline text-sm font-bold">Shared Clipboard</span>
-            </Link>
+            </span>
 
             <span className="text-slate-300 dark:text-slate-700">/</span>
 
@@ -209,10 +148,19 @@ export default function Room() {
           <div className="flex items-center gap-2 sm:gap-3">
             <button 
               type="button"
-              className="p-1.5 sm:p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 transition cursor-default"
-              title="Theme toggle (coming soon)"
+              className="p-1.5 sm:p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 transition cursor-pointer"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              onClick={()=>{
+                if(theme === "dark"){
+                  setTheme("light");
+                  localStorage.setItem("theme", "light");
+                } else {
+                  setTheme("dark");
+                  localStorage.setItem("theme", "dark");
+                }
+              }}
             >
-              <Moon className="w-4 h-4" />
+              {theme === "dark" ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
 
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
@@ -220,7 +168,7 @@ export default function Room() {
                 <User className="w-3.5 h-3.5" />
               </div>
               <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 hidden sm:inline">
-                Krish
+                {username}
               </span>
             </div>
 
@@ -245,7 +193,7 @@ export default function Room() {
                 onChange={(e) => setNewContent(e.target.value)}
                 placeholder="Paste your text, code snippet, or link here to share with the room..."
                 rows={1}
-                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 resize-none sleek-scrollbar transition font-sans min-h-[42px]"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 resize-none sleek-scrollbar transition font-sans min-h-10.5"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -318,7 +266,7 @@ export default function Room() {
                   </div>
                 </div>
 
-                <div className="p-3.5 max-h-[380px] overflow-y-auto sleek-scrollbar">
+                <div className="p-3.5 max-h-95 overflow-y-auto sleek-scrollbar">
                   {clipType === 'code' ? (
                     <div className="bg-slate-950 rounded-xl p-3 text-slate-100 text-xs font-mono overflow-x-auto leading-relaxed border border-slate-800/80">
                       <pre><code>{clip.content}</code></pre>

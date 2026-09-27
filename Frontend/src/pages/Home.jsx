@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ToastContainer, toast } from 'react-toastify';
 import { 
   Clipboard, 
   Moon, 
+  Sun,
   User, 
   Sparkles, 
   Dices, 
@@ -16,7 +18,14 @@ export default function Home({ username, setUsername }) {
   const [joinRoomId, setJoinRoomId] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [nameInput, setNameInput] = useState(username || '');
+  const [theme, setTheme] = useState(localStorage.getItem("theme") || "light") ;
   const navigate = useNavigate();
+
+  if(theme === "dark"){
+    document.documentElement.classList.add("dark");
+  } else {
+    document.documentElement.classList.remove("dark");
+  }
 
   const toggleModal = () => {
     setNameInput(username || '');
@@ -25,40 +34,106 @@ export default function Home({ username, setUsername }) {
 
   const handleSaveUsername = (e) => {
     e.preventDefault();
-    if (nameInput.trim()) {
-      setUsername(nameInput.trim());
+    const clean = nameInput.trim();
+    if (clean.length >= 6 && clean.length <= 10) {
+      setUsername(clean);
       setIsModalOpen(false);
-      localStorage.setItem("username", nameInput.trim());
+      localStorage.setItem("username", clean);
     } 
   };
 
   const handleGenerateRandomId = () => {
-    const randomNum = Math.floor(1000 + Math.random() * 999999);
+    const randomNum = Math.floor(100000 + Math.random() * 900000);
     setCreateRoomId(`${randomNum}`);
   };
 
-  const handleCreateRoom = (e) => {
+  const handleCreateRoom = async (e) => {
     e.preventDefault();
     if(!username){
       toggleModal();
       return;
     }
-    navigate(`/room/${createRoomId.trim()}`);
+
+    const trimmedId = createRoomId.trim();
+    if (trimmedId.length < 6 || trimmedId.length > 10) {
+      return;
+    }
+
+    const res = await fetch('/api/checkRoomAvailability',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          roomId: trimmedId
+        })
+      }
+    );
+    const data = await res.json();
+
+    console.log(data);
+    if (!data.success) {
+      toast.error(data.message, {
+        position: "top-right",
+        autoClose: 1500,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: false,
+        draggable: false,
+        progress: undefined,
+        theme: theme,
+      });
+      return;
+    }
+    navigate(`/room/${trimmedId}`);
   };
 
-  const handleJoinRoom = (e) => {
+  const handleJoinRoom = async (e) => {
     e.preventDefault();
     if(!username){
       toggleModal();
       return;
     }
-    if (!joinRoomId.trim()) return;
-    navigate(`/room/${joinRoomId.trim()}`);
+
+    const trimmedId = joinRoomId.trim();
+    if (trimmedId.length < 6 || trimmedId.length > 10) {
+      return;
+    } 
+
+    const res = await fetch('/api/checkIfRoomExistToJoin',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          roomId: trimmedId
+        })
+      }
+    );
+    const data = await res.json();
+
+    console.log(data);
+    if (!data.success) {
+      toast.error(data.message, {
+        position: "top-right",
+        autoClose: 1500,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: false,
+        draggable: false,
+        progress: undefined,
+        theme: theme,
+      });
+      return;
+    }
+    navigate(`/room/${trimmedId}`);
   };
 
   return (
     <div className="h-screen flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-y-auto lg:overflow-hidden transition-colors duration-200">
-      {/* Simple Username Modal Dialog */}
+      <ToastContainer  />
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
           <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xl relative">
@@ -77,23 +152,43 @@ export default function Home({ username, setUsername }) {
 
             <form onSubmit={handleSaveUsername} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                  Username
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    Username
+                  </label>
+                  <span className={`text-[11px] font-medium ${nameInput.length >= 10 ? 'text-amber-500 font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
+                    {nameInput.length}/10
+                  </span>
+                </div>
                 <input
                   type="text"
+                  maxLength={10}
                   value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
+                  onChange={(e) => setNameInput(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
                   placeholder="Enter your name"
                   autoFocus
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+                  className={`w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 transition ${
+                    nameInput.length >= 10
+                      ? 'border-amber-400 dark:border-amber-500 focus:ring-amber-500/40 focus:border-amber-500'
+                      : 'border-slate-300 dark:border-slate-700 focus:ring-indigo-500/40 focus:border-indigo-500'
+                  }`}
                 />
+                {nameInput.length >= 10 && (
+                  <p className="text-[11px] text-amber-500 font-medium mt-1">
+                    Maximum 10 characters reached
+                  </p>
+                )}
+                {nameInput.length > 0 && nameInput.length < 6 && (
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                    Minimum 6 characters required
+                  </p>
+                )}
               </div>
 
               <button
                 type="submit"
-                disabled={!nameInput.trim()}
-                className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold text-sm rounded-xl transition cursor-pointer"
+                disabled={nameInput.trim().length < 6 || nameInput.trim().length > 10}
+                className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm rounded-xl transition cursor-pointer"
               >
                 Save
               </button>
@@ -118,10 +213,19 @@ export default function Home({ username, setUsername }) {
           <div className="flex items-center gap-2.5">
             <button 
               type="button"
-              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 transition cursor-default"
-              title="Theme toggle (coming soon)"
+              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 transition cursor-pointer"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              onClick={()=>{
+                if(theme === "dark"){
+                  setTheme("light");
+                  localStorage.setItem("theme", "light");
+                } else {
+                  setTheme("dark");
+                  localStorage.setItem("theme", "dark");
+                }
+              }}
             >
-              <Moon className="w-4 h-4" />
+              {theme === "dark" ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
 
             <button
@@ -186,19 +290,19 @@ export default function Home({ username, setUsername }) {
                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Room Name / ID
                     </label>
-                    <span className={`text-[11px] font-medium ${createRoomId.length >= 8 ? 'text-amber-500 font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
-                      {createRoomId.length}/8
+                    <span className={`text-[11px] font-medium ${createRoomId.length >= 10 ? 'text-amber-500 font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
+                      {createRoomId.length}/10
                     </span>
                   </div>
                   <div className="relative flex items-center">
                     <input
                       type="text"
-                      maxLength={8}
+                      maxLength={10}
                       value={createRoomId}
-                      onChange={(e) => setCreateRoomId(e.target.value)}
+                      onChange={(e) => setCreateRoomId(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
                       placeholder="Enter room code"
                       className={`w-full pl-3 pr-24 py-2 bg-slate-50 dark:bg-slate-800/60 border rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 transition ${
-                        createRoomId.length >= 8 
+                        createRoomId.length >= 10 
                           ? 'border-amber-400 dark:border-amber-500 focus:ring-amber-500/40 focus:border-amber-500' 
                           : 'border-slate-300 dark:border-slate-700 focus:ring-indigo-500/40 focus:border-indigo-500'
                       }`}
@@ -212,16 +316,22 @@ export default function Home({ username, setUsername }) {
                       Random
                     </button>
                   </div>
-                  {createRoomId.length >= 8 && (
+                  {createRoomId.length >= 10 && (
                     <p className="text-[11px] text-amber-500 font-medium mt-1">
-                      Maximum 8 characters reached
+                      Maximum 10 characters reached
+                    </p>
+                  )}
+                  {createRoomId.length > 0 && createRoomId.length < 6 && (
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                      Minimum 6 characters required
                     </p>
                   )}
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-sm rounded-xl shadow-xs shadow-indigo-600/20 transition flex items-center justify-center gap-2 group cursor-pointer"
+                  disabled={createRoomId.trim().length < 6}
+                  className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-sm rounded-xl shadow-xs shadow-indigo-600/20 transition flex items-center justify-center gap-2 group cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span>Create Room</span>
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
@@ -258,32 +368,37 @@ export default function Home({ username, setUsername }) {
                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       Room Code / ID
                     </label>
-                    <span className={`text-[11px] font-medium ${joinRoomId.length >= 8 ? 'text-amber-500 font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
-                      {joinRoomId.length}/8
+                    <span className={`text-[11px] font-medium ${joinRoomId.length >= 10 ? 'text-amber-500 font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
+                      {joinRoomId.length}/10
                     </span>
                   </div>
                   <input
                     type="text"
-                    maxLength={8}
+                    maxLength={10}
                     value={joinRoomId}
-                    onChange={(e) => setJoinRoomId(e.target.value)}
+                    onChange={(e) => setJoinRoomId(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
                     placeholder="Enter room code"
                     className={`w-full px-3 py-2 bg-slate-50 dark:bg-slate-800/60 border rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 transition ${
-                      joinRoomId.length >= 8
+                      joinRoomId.length >= 10
                         ? 'border-amber-400 dark:border-amber-500 focus:ring-amber-500/40 focus:border-amber-500'
                         : 'border-slate-300 dark:border-slate-700 focus:ring-violet-500/40 focus:border-violet-500'
                     }`}
                   />
-                  {joinRoomId.length >= 8 && (
+                  {joinRoomId.length >= 10 && (
                     <p className="text-[11px] text-amber-500 font-medium mt-1">
-                      Maximum 8 characters reached
+                      Maximum 10 characters reached
+                    </p>
+                  )}
+                  {joinRoomId.length > 0 && joinRoomId.length < 6 && (
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                      Minimum 6 characters required
                     </p>
                   )}
                 </div>
 
                 <button
                   type="submit"
-                  disabled={!joinRoomId.trim()}
+                  disabled={joinRoomId.trim().length < 6}
                   className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 active:bg-black dark:bg-slate-800 dark:hover:bg-slate-700 dark:active:bg-slate-600 text-white font-semibold text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-2 group cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span>Join Room</span>

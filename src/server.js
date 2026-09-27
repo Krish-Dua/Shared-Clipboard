@@ -24,6 +24,8 @@ const io = new Server(server, {
   },
 });
 
+const serverRooms= new Map();
+
 
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
@@ -51,6 +53,59 @@ app.get("/", (req, res) => {
     });
 });
 
+app.post("/api/checkRoomAvailability", (req, res) => {
+    const {roomId} = req.body;
+    
+    if (!roomId) {
+      return res.status(400).json({
+        success: false,
+        message: "Room ID is required ."
+      })
+    }
+
+    const roomExists = serverRooms.has(roomId)
+    if (roomExists) {
+      return res.status(200).json({
+        success: false,
+        message: `Room ID ${roomId} is already active .`
+      }); 
+    }
+
+    serverRooms.set(roomId, {users:new Set(), clips:[]})
+
+    return res.status(200).json({
+      success: true,
+      message: `Room ID ${roomId} is available .`
+    });
+
+    
+});
+
+
+
+app.post("/api/checkIfRoomExistToJoin", (req, res) => {
+    const {roomId} = req.body;
+    
+    if (!roomId) {
+      return res.status(400).json({
+        success: false,
+        message: "Room ID is required ."
+      })
+    }
+
+    const roomExists = serverRooms.has(roomId)
+    if (!roomExists) {
+      return res.status(200).json({
+        success: false,
+        message: `Room with ID ${roomId} doesn't exist .`
+      }); 
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Room with ID ${roomId} is available to join .`
+    });
+});
 
 app.use(notFound);
 

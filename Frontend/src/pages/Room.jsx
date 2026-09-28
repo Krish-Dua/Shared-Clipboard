@@ -1,6 +1,8 @@
-import { useState,useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import { socket } from '../socket';
+import UsernameModal from '../components/UsernameModal';
 import { 
   Clipboard, 
   Moon, 
@@ -12,7 +14,6 @@ import {
   LogOut, 
   Link as LinkIcon, 
   Share2,
-  Trash2,
   ExternalLink
 } from 'lucide-react';
 
@@ -49,12 +50,13 @@ const getClipType = (content = '') => {
   return 'text';
 };
 
-export default function Room({username}) {
+export default function Room({ username, setUsername }) {
   const { roomId } = useParams();
   const navigate = useNavigate();
   const [clips, setClips] = useState([]);
   const [newContent, setNewContent] = useState('');
   const [copiedId, setCopiedId] = useState(null);
+  const [usersOnline, setUsersOnline] = useState(0);
   const [copiedRoomLink, setCopiedRoomLink] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
 
@@ -64,22 +66,55 @@ export default function Room({username}) {
     document.documentElement.classList.remove("dark");
   }
 
+  const handleSaveUsername = (clean) => {
+    setUsername(clean);
+    localStorage.setItem("username", clean);
+  };
+
    useEffect(() => {
      socket.connect();
     socket.on("connect", () => {
       console.log("Connected:", socket.id);
     });
 
+    socket.emit("join-room", { roomId, username });
 
 
+    socket.on("room-users-count", (count) => {
+      setUsersOnline(count);
+    });
 
+    socket.on("get-clips", (clips) => {
+      setClips(clips);
+    });
 
+    socket.on("receive-clip", (clip) => {
+      setClips((prev) => [clip, ...prev]);
+    });
+
+    socket.on("room-not-found", ({ message }) => {
+      toast.error(message || `Room #${roomId} does not exist or has expired.`, {
+        toastId: 'room-not-found',
+        position: "top-right",
+        autoClose: 2000,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: false,
+        draggable: false,
+        theme: theme,
+      });
+      navigate('/');
+    });
 
     return () => {
       socket.off("connect");
-       socket.disconnect();
+      socket.off("room-users-count");
+      socket.off("get-clips");
+      socket.off("receive-clip");
+      socket.off("room-not-found");
+      socket.disconnect();
     };
-  }, [roomId]);
+  }, [roomId, username, theme, navigate]);
 
   const handleCopy = (id, text) => {
     navigator.clipboard.writeText(text);
@@ -98,22 +133,25 @@ export default function Room({username}) {
     if (!newContent.trim()) return;
 
     const newClip = {
-      id: `clip-${Date.now()}`,
-      sender: 'Krish',
+      id: `clip-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      sender: username || 'Anonymous',
       content: newContent.trim(),
-      createdAt: 'Just now'
+      createdAt: Date.now()
     };
 
-    setClips([newClip, ...clips]);
+    socket.emit("send-clip", newClip);
     setNewContent('');
-  };
-
-  const handleDeleteClip = (id) => {
-    setClips(clips.filter(c => c.id !== id));
   };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200">
+      <UsernameModal 
+        isOpen={!username} 
+        username="" 
+        onSave={handleSaveUsername} 
+        onClose={() => navigate('/')} 
+      />
+
       <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -141,7 +179,7 @@ export default function Room({username}) {
 
             <div className="hidden md:flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/50 dark:border-emerald-800/50">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>3 Online</span>
+              <span>{usersOnline} Online</span>
             </div>
           </div>
 
@@ -225,15 +263,15 @@ export default function Room({username}) {
               >
                 <div className="p-3 pb-2 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className={`w-5 h-5 rounded-full ${getSenderColor(clip.sender)} text-white flex items-center justify-center font-bold text-[10px] shrink-0`}>
-                      {clip.sender.charAt(0)}
+                    <div className={`w-5 h-5 rounded-full ${getSenderColor(clip.sender || '')} text-white flex items-center justify-center font-bold text-[10px] shrink-0`}>
+                      {(clip.sender || '?').charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0 flex items-center gap-1.5">
                       <span className="font-semibold text-xs text-slate-900 dark:text-white truncate">
-                        {clip.sender}
+                        {clip.sender || 'Anonymous'}
                       </span>
                       <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">
-                        &bull; {clip.createdAt}
+                        &bull; {typeof clip.createdAt === 'number' ? new Date(clip.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : clip.createdAt}
                       </span>
                     </div>
                   </div>
@@ -254,14 +292,6 @@ export default function Room({username}) {
                           <Copy className="w-3.5 h-3.5" />
                         </>
                       )}
-                    </button>
-
-                    <button
-                      onClick={() => handleDeleteClip(clip.id)}
-                      className="p-1 text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition opacity-0 group-hover:opacity-100 cursor-pointer"
-                      title="Remove clip"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>

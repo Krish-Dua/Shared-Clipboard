@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ToastContainer, toast } from 'react-toastify';
+import { toast } from 'react-toastify';
+import UsernameModal from '../components/UsernameModal';
 import { 
   Clipboard, 
   Moon, 
-  Sun,
+  Sun, 
   User, 
   Sparkles, 
   Dices, 
@@ -17,7 +18,6 @@ export default function Home({ username, setUsername }) {
   const [createRoomId, setCreateRoomId] = useState(username || '');
   const [joinRoomId, setJoinRoomId] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [nameInput, setNameInput] = useState(username || '');
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light") ;
   const navigate = useNavigate();
 
@@ -28,18 +28,13 @@ export default function Home({ username, setUsername }) {
   }
 
   const toggleModal = () => {
-    setNameInput(username || '');
     setIsModalOpen(!isModalOpen);
   };
 
-  const handleSaveUsername = (e) => {
-    e.preventDefault();
-    const clean = nameInput.trim();
-    if (clean.length >= 6 && clean.length <= 10) {
-      setUsername(clean);
-      setIsModalOpen(false);
-      localStorage.setItem("username", clean);
-    } 
+  const handleSaveUsername = (clean) => {
+    setUsername(clean);
+    setIsModalOpen(false);
+    localStorage.setItem("username", clean);
   };
 
   const handleGenerateRandomId = () => {
@@ -133,69 +128,12 @@ export default function Home({ username, setUsername }) {
 
   return (
     <div className="h-screen flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-y-auto lg:overflow-hidden transition-colors duration-200">
-      <ToastContainer  />
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xl relative">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                {username ? 'Change Username' : 'Register Username'}
-              </h2>
-              <button
-                type="button"
-                onClick={toggleModal}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveUsername} className="space-y-4">
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400">
-                    Username
-                  </label>
-                  <span className={`text-[11px] font-medium ${nameInput.length >= 10 ? 'text-amber-500 font-semibold' : 'text-slate-400 dark:text-slate-500'}`}>
-                    {nameInput.length}/10
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  maxLength={10}
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
-                  placeholder="Enter your name"
-                  autoFocus
-                  className={`w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 transition ${
-                    nameInput.length >= 10
-                      ? 'border-amber-400 dark:border-amber-500 focus:ring-amber-500/40 focus:border-amber-500'
-                      : 'border-slate-300 dark:border-slate-700 focus:ring-indigo-500/40 focus:border-indigo-500'
-                  }`}
-                />
-                {nameInput.length >= 10 && (
-                  <p className="text-[11px] text-amber-500 font-medium mt-1">
-                    Maximum 10 characters reached
-                  </p>
-                )}
-                {nameInput.length > 0 && nameInput.length < 6 && (
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-                    Minimum 6 characters required
-                  </p>
-                )}
-              </div>
-
-              <button
-                type="submit"
-                disabled={nameInput.trim().length < 6 || nameInput.trim().length > 10}
-                className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm rounded-xl transition cursor-pointer"
-              >
-                Save
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      <UsernameModal 
+        isOpen={isModalOpen} 
+        username={username} 
+        onSave={handleSaveUsername} 
+        onClose={toggleModal} 
+      />
 
       <header className="shrink-0 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">

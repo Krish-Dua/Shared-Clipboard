@@ -1,12 +1,13 @@
 {
-  "name": "shared clipboard",
+  "name": "shared-clipboard",
   "version": "1.0.0",
-  "description": "Production-ready Express backend scaffold.",
+  "description": "Instant real-time shared clipboard web application.",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
+    "build": "npm install --prefix Frontend && npm run build --prefix Frontend",
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
   },
   "author": "",
   "license": "ISC",

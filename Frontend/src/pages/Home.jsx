@@ -195,7 +195,7 @@ export default function Home({ username, setUsername }) {
           </h1>
 
           <p className="text-base sm:text-lg text-slate-600 dark:text-slate-400 leading-relaxed max-w-xl mx-auto">
-            Paste text, code snippets, or links to share instantly with your team. Everything syncs in real time and disappears when the room is closed.
+            Paste text, code snippets, or links to share instantly with your team. Everything syncs in real time and auto-cleans 10 minutes after the room is empty.
           </p>
         </div>
 
@@ -351,7 +351,7 @@ export default function Home({ username, setUsername }) {
       <footer className="shrink-0 border-t border-slate-200/80 dark:border-slate-800/80 py-3.5 text-center text-xs text-slate-500 dark:text-slate-400">
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-1.5">
           <span>Shared Clipboard &bull; Instant Real-Time Sharing</span>
-          <span>No sign-up required &bull; Auto-cleans on exit</span>
+          <span>No sign-up required &bull; Auto-cleans 10 mins after room is empty</span>
         </div>
       </footer>
     </div>

@@ -8,6 +8,11 @@ import cookieParser from "cookie-parser";
 import { notFound } from "./middlewares/notFound.middleware.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
 
+import path from "path";
+import { fileURLToPath } from "url";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 dotenv.config();
 
 const app = express();
@@ -18,7 +23,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: "*",
   },
 });
 
@@ -83,22 +88,17 @@ io.on("connection", (socket) => {
 app.use(cors());
 
 app.use(express.json());
-
 app.use(
   express.urlencoded({
     extended: true,
   }),
 );
-
 app.use(cookieParser());
 
-app.get("/", (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "Server is running .",
-  });
-});
+// Static Frontend Assets
+app.use(express.static(path.join(__dirname, "../Frontend/dist")));
 
+// API Routes
 app.post("/api/checkRoomAvailability", (req, res) => {
   const { roomId } = req.body;
 
@@ -149,8 +149,12 @@ app.post("/api/checkIfRoomExistToJoin", (req, res) => {
   });
 });
 
-app.use(notFound);
+// Client-Side SPA Routing Fallback (Express 5 compatible)
+app.get("{*path}", (req, res) => {
+  res.sendFile(path.join(__dirname, "../Frontend/dist/index.html"));
+});
 
+app.use(notFound);
 app.use(errorHandler);
 
 server.listen(PORT, () => {

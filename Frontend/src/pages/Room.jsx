@@ -101,7 +101,6 @@ export default function Room({ username, setUsername }) {
         closeOnClick: true,
         pauseOnHover: false,
         draggable: false,
-        theme: theme,
       });
       navigate('/');
     });
@@ -114,7 +113,7 @@ export default function Room({ username, setUsername }) {
       socket.off("room-not-found");
       socket.disconnect();
     };
-  }, [roomId, username, theme, navigate]);
+  }, [roomId, username, navigate]);
 
   const handleCopy = (id, text) => {
     navigator.clipboard.writeText(text);

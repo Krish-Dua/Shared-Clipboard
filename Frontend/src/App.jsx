@@ -9,7 +9,7 @@ function App() {
   
   return (
     <Router>
-      <ToastContainer />
+      <ToastContainer theme="colored" />
       <Routes>
         <Route path="/" element={<Home username={username} setUsername={setUsername} />} />
         <Route path="/room/:roomId" element={<Room username={username} setUsername={setUsername} />} />

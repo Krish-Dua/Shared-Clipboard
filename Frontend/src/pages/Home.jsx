@@ -76,8 +76,6 @@ export default function Home({ username, setUsername }) {
         closeOnClick: true,
         pauseOnHover: false,
         draggable: false,
-        progress: undefined,
-        theme: theme,
       });
       return;
     }
@@ -118,8 +116,6 @@ export default function Home({ username, setUsername }) {
         closeOnClick: true,
         pauseOnHover: false,
         draggable: false,
-        progress: undefined,
-        theme: theme,
       });
       return;
     }

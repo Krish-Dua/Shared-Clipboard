@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { socket } from '../socket';
@@ -7,6 +7,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import { 
   Clipboard, 
   ClipboardPaste,
+  Paperclip,
+  Download,
+  FileText,
   Moon, 
   Sun,
   User, 
@@ -54,6 +57,14 @@ const getClipType = (content = '') => {
   return 'text';
 };
 
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+
 export default function Room({ username, setUsername }) {
   const { roomId } = useParams();
   const navigate = useNavigate();
@@ -64,6 +75,7 @@ export default function Room({ username, setUsername }) {
   const [copiedRoomLink, setCopiedRoomLink] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
   const [isQrCodeOpen, setIsQrCodeOpen] = useState(false);
+  const fileInputRef = useRef(null);
 
   if(theme === "dark"){
     document.documentElement.classList.add("dark");
@@ -151,6 +163,49 @@ export default function Room({ username, setUsername }) {
         hideProgressBar: true,
       });
     }
+  };
+
+  const handlePaperclipClick = () => {
+    if (!username) return;
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const MAX_SIZE = 5 * 1024 * 1024; // 5 MB limit
+
+    files.forEach((file) => {
+      if (file.size > MAX_SIZE) {
+        toast.error(`"${file.name}" exceeds the 5MB size limit.`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const isImage = file.type.startsWith('image/');
+        const newClip = {
+          id: `clip-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          sender: username,
+          type: isImage ? 'image' : 'file',
+          content: '',
+          file: {
+            name: file.name,
+            size: file.size,
+            mimeType: file.type || 'application/octet-stream',
+            dataUrl: reader.result,
+          },
+          createdAt: Date.now(),
+        };
+
+        socket.emit("send-clip", newClip);
+      };
+
+      reader.readAsDataURL(file);
+    });
+
+    e.target.value = '';
   };
 
   const handlePostClip = (e) => {
@@ -274,6 +329,13 @@ export default function Room({ username, setUsername }) {
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 sm:p-3.5 border border-slate-200 dark:border-slate-800 shadow-xs">
           <form onSubmit={handlePostClip} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
             <div className="flex-1 relative flex items-center">
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileChange} 
+                multiple 
+                className="hidden" 
+              />
               <textarea
                 value={newContent}
                 disabled={!username}
@@ -299,21 +361,36 @@ export default function Room({ username, setUsername }) {
                 <span>Paste</span>
               </button>
             </div>
-            <button
-              type="submit"
-              disabled={!username || !newContent.trim()}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-sm rounded-xl shadow-xs shadow-indigo-600/20 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0"
-            >
-              <Send className="w-4 h-4" />
-              <span>Share Clip</span>
-            </button>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handlePaperclipClick}
+                disabled={!username}
+                className="p-2.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                title="Attach file or image (Max 5MB)"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+
+              <button
+                type="submit"
+                disabled={!username || !newContent.trim()}
+                className="flex-1 sm:flex-initial px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-sm rounded-xl shadow-xs shadow-indigo-600/20 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+                <span>Share Clip</span>
+              </button>
+            </div>
           </form>
         </div>
 
         <div className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">
           {clips.map((clip) => {
             const isCopied = copiedId === clip.id;
-            const clipType = getClipType(clip.content);
+            const isImage = clip.type === 'image' || (clip.file && clip.file.mimeType?.startsWith('image/'));
+            const isFile = clip.type === 'file' || (clip.file && !isImage);
+            const clipType = getClipType(clip.content || '');
 
             return (
               <div
@@ -336,27 +413,66 @@ export default function Room({ username, setUsername }) {
                   </div>
 
                   <div className="flex items-center gap-0.5">
-                    <button
-                      onClick={() => handleCopy(clip.id, clip.content)}
-                      className="p-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition flex items-center gap-1 text-xs cursor-pointer"
-                      title="Copy to clipboard"
-                    >
-                      {isCopied ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-500" />
-                          <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                        </>
-                      )}
-                    </button>
+                    {clip.file ? (
+                      <a
+                        href={clip.file.dataUrl}
+                        download={clip.file.name || 'download'}
+                        className="p-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition flex items-center gap-1 text-xs cursor-pointer"
+                        title="Download file"
+                      >
+                        <Download className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                      </a>
+                    ) : (
+                      <button
+                        onClick={() => handleCopy(clip.id, clip.content)}
+                        className="p-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition flex items-center gap-1 text-xs cursor-pointer"
+                        title="Copy to clipboard"
+                      >
+                        {isCopied ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                            <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 <div className="p-3.5 max-h-95 overflow-y-auto sleek-scrollbar">
-                  {clipType === 'code' ? (
+                  {isImage && clip.file ? (
+                    <div className="space-y-2">
+                      <div className="relative rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 group/img">
+                        <img 
+                          src={clip.file.dataUrl} 
+                          alt={clip.file.name || 'Shared Image'} 
+                          className="w-full max-h-72 object-contain rounded-xl"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                        <span className="truncate max-w-[70%] font-medium">{clip.file.name}</span>
+                        <span>{formatFileSize(clip.file.size)}</span>
+                      </div>
+                    </div>
+                  ) : isFile && clip.file ? (
+                    <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700/60 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/50">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                          {clip.file.name}
+                        </p>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                          {formatFileSize(clip.file.size)}
+                        </p>
+                      </div>
+                    </div>
+                  ) : clipType === 'code' ? (
                     <div className="bg-slate-950 rounded-xl p-3 text-slate-100 text-xs font-mono overflow-x-auto leading-relaxed border border-slate-800/80">
                       <pre><code>{clip.content}</code></pre>
                     </div>

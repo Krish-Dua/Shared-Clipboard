@@ -22,6 +22,8 @@ import {
   ExternalLink,
   QrCodeIcon,
   X,
+  BellOff,
+  Bell,
 } from 'lucide-react';
 
 
@@ -75,8 +77,12 @@ export default function Room({ username, setUsername }) {
   const [copiedRoomLink, setCopiedRoomLink] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
   const [isQrCodeOpen, setIsQrCodeOpen] = useState(false);
+  const [isNotificationsMuted, setIsNotificationsMuted] = useState(false);
+  const isMutedRef = useRef(false);
+  isMutedRef.current = isNotificationsMuted;
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
+
 
   if(theme === "dark"){
     document.documentElement.classList.add("dark");
@@ -108,7 +114,11 @@ export default function Room({ username, setUsername }) {
     });
 
     socket.on("receive-clip", (clip) => {
-      setClips((prev) => [clip, ...prev].slice(0,50));
+      setClips((prev) => [clip, ...prev].slice(0, 50));
+
+      if (!isMutedRef.current && clip.sender !== username) {
+        playNotificationSound();
+      }
     });
 
     socket.on("room-not-found", ({ message }) => {
@@ -226,6 +236,42 @@ export default function Room({ username, setUsername }) {
     setNewContent('');
   };
 
+  const playNotificationSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+
+      // // Browser Autoplay Policy: resume audio context if suspended after page refresh
+      // if (ctx.state === "suspended") {
+      //   ctx.resume();
+      // }
+
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = "sine"; 
+
+      // Clear, musical 2-note chime: E5 (659Hz) -> C6 (1046Hz)
+      osc.frequency.setValueAtTime(659.25, now);
+      osc.frequency.setValueAtTime(1046.50, now + 0.12);
+
+      // Audible, crisp volume envelope
+      gain.gain.setValueAtTime(0.40, now);
+      gain.gain.setValueAtTime(0.40, now + 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.55);
+    } catch (err) {
+      console.error("Audio playback error:", err);
+    }
+  };
+
  
 
   return (
@@ -289,6 +335,15 @@ export default function Room({ username, setUsername }) {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
+              <button 
+                type="button"
+                className="p-1.5 sm:p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 transition cursor-pointer"
+                title={isNotificationsMuted ? "Unmute Notifications" : "Mute Notifications"}
+                onClick={()=>setIsNotificationsMuted(!isNotificationsMuted)}
+              >
+                {isNotificationsMuted ? <BellOff className="w-4 h-4 text-amber-400" /> : <Bell className="w-4 h-4" />}
+              </button>
+
               <button 
                 type="button"
                 className="p-1.5 sm:p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 transition cursor-pointer"

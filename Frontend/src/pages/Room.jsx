@@ -76,6 +76,7 @@ export default function Room({ username, setUsername }) {
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
   const [isQrCodeOpen, setIsQrCodeOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
 
   if(theme === "dark"){
     document.documentElement.classList.add("dark");
@@ -107,7 +108,7 @@ export default function Room({ username, setUsername }) {
     });
 
     socket.on("receive-clip", (clip) => {
-      setClips((prev) => [clip, ...prev]);
+      setClips((prev) => [clip, ...prev].slice(0,50));
     });
 
     socket.on("room-not-found", ({ message }) => {
@@ -150,6 +151,7 @@ export default function Room({ username, setUsername }) {
       const text = await navigator.clipboard.readText();
       if (text && text.trim()) {
         setNewContent((prev) => (prev ? `${prev}\n${text}` : text));
+          textareaRef.current?.focus();
       } else {
         toast.info("Clipboard is empty.", {
           autoClose: 1500,
@@ -337,6 +339,7 @@ export default function Room({ username, setUsername }) {
                 className="hidden" 
               />
               <textarea
+                ref={textareaRef}
                 value={newContent}
                 disabled={!username}
                 onChange={(e) => setNewContent(e.target.value)}

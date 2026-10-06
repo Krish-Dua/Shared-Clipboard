@@ -61,6 +61,18 @@ io.on("connection", (socket) => {
     if (!room) return;
 
     room.clips.unshift(clip);
+
+    while (room.clips.length > 50) {
+      room.clips.pop();
+    }
+
+    let fileCount = 0;
+    room.clips = room.clips.filter((c) => {
+      if (!c.file) return true;
+      fileCount++;
+      return fileCount <= 10;
+    });
+
     io.to(socket.room).emit("receive-clip", clip);
   });
 

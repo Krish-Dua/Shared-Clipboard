@@ -5,6 +5,7 @@ import { socket } from '../socket';
 import UsernameModal from '../components/UsernameModal';
 import { 
   Clipboard, 
+  ClipboardPaste,
   Moon, 
   Sun,
   User, 
@@ -72,6 +73,7 @@ export default function Room({ username, setUsername }) {
   };
 
    useEffect(() => {
+      if (!username) return; 
      socket.connect();
     socket.on("connect", () => {
       console.log("Connected:", socket.id);
@@ -125,6 +127,26 @@ export default function Room({ username, setUsername }) {
     navigator.clipboard.writeText(window.location.href);
     setCopiedRoomLink(true);
     setTimeout(() => setCopiedRoomLink(false), 2000);
+  };
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        setNewContent(text);
+      } else {
+        toast.info("Clipboard is empty.", {
+          autoClose: 1500,
+          hideProgressBar: true,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to read clipboard:", err);
+      toast.error("Permission to access clipboard was denied.", {
+        autoClose: 2000,
+        hideProgressBar: true,
+      });
+    }
   };
 
   const handlePostClip = (e) => {
@@ -226,14 +248,14 @@ export default function Room({ username, setUsername }) {
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 sm:p-3.5 border border-slate-200 dark:border-slate-800 shadow-xs">
           <form onSubmit={handlePostClip} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-            <div className="flex-1 relative">
+            <div className="flex-1 relative flex items-center">
               <textarea
                 value={newContent}
                 disabled={!username}
                 onChange={(e) => setNewContent(e.target.value)}
                 placeholder="Paste your text, code snippet, or link here to share with the room..."
                 rows={1}
-                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 resize-none sleek-scrollbar transition font-sans min-h-10.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full pl-3.5 pr-22 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 resize-none sleek-scrollbar transition font-sans min-h-10.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -241,6 +263,16 @@ export default function Room({ username, setUsername }) {
                   }
                 }}
               />
+              <button
+                type="button"
+                onClick={handlePasteFromClipboard}
+                disabled={!username}
+                className="absolute right-2 px-2.5 py-1 text-xs font-medium bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-600 shadow-2xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Paste from device clipboard"
+              >
+                <ClipboardPaste className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                <span>Paste</span>
+              </button>
             </div>
             <button
               type="submit"

@@ -95,10 +95,14 @@ app.use(
 );
 app.use(cookieParser());
 
-// Static Frontend Assets
 app.use(express.static(path.join(__dirname, "../Frontend/dist")));
 
-// API Routes
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    status: "ok"
+  });
+});
+
 app.post("/api/checkRoomAvailability", (req, res) => {
   const { roomId } = req.body;
 
@@ -149,7 +153,6 @@ app.post("/api/checkIfRoomExistToJoin", (req, res) => {
   });
 });
 
-// Client-Side SPA Routing Fallback (Express 5 compatible)
 app.get("{*path}", (req, res) => {
   res.sendFile(path.join(__dirname, "../Frontend/dist/index.html"));
 });

@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { socket } from '../socket';
 import UsernameModal from '../components/UsernameModal';
+import { QRCodeSVG } from 'qrcode.react';
 import { 
   Clipboard, 
   ClipboardPaste,
@@ -15,7 +16,9 @@ import {
   LogOut, 
   Link as LinkIcon, 
   Share2,
-  ExternalLink
+  ExternalLink,
+  QrCodeIcon,
+  X,
 } from 'lucide-react';
 
 
@@ -60,6 +63,7 @@ export default function Room({ username, setUsername }) {
   const [usersOnline, setUsersOnline] = useState(0);
   const [copiedRoomLink, setCopiedRoomLink] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
+  const [isQrCodeOpen, setIsQrCodeOpen] = useState(false);
 
   if(theme === "dark"){
     document.documentElement.classList.add("dark");
@@ -133,7 +137,7 @@ export default function Room({ username, setUsername }) {
     try {
       const text = await navigator.clipboard.readText();
       if (text && text.trim()) {
-        setNewContent(text);
+        setNewContent((prev) => (prev ? `${prev}\n${text}` : text));
       } else {
         toast.info("Clipboard is empty.", {
           autoClose: 1500,
@@ -165,6 +169,8 @@ export default function Room({ username, setUsername }) {
     setNewContent('');
   };
 
+ 
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200 relative">
       <UsernameModal 
@@ -174,10 +180,27 @@ export default function Room({ username, setUsername }) {
         onClose={() => navigate('/')} 
       />
 
+{ isQrCodeOpen &&
+<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+      <div className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 p-6 shadow-xl relative">
+              <X onClick={()=> setIsQrCodeOpen(false)} className="absolute cursor-pointer top-3 right-3 w-5 h-5 text-black" />
+             <div className='mt-8 mb-6 flex items-center justify-center'> 
+               <QRCodeSVG value={window.location.href} size={256} />
+               </div>
+      </div>
+    </div>
+}
+
+
+
+
+
+
       <div className={`flex-1 flex flex-col transition-all duration-200 ${!username ? 'pointer-events-none select-none blur-xs opacity-50' : ''}`}>
         <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
+
               <span  className="flex items-center gap-2 text-slate-900 dark:text-white font-bold tracking-tight hover:opacity-80 transition">
                 <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shadow-indigo-500/20">
                   <Clipboard className="w-4 h-4" />
@@ -199,6 +222,8 @@ export default function Room({ username, setUsername }) {
                   {copiedRoomLink ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Share2 className="w-3.5 h-3.5" />}
                 </button>
               </div>
+
+              <QrCodeIcon className='cursor-pointer' onClick={()=> setIsQrCodeOpen(true)} />
 
               <div className="hidden md:flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/50 dark:border-emerald-800/50">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />

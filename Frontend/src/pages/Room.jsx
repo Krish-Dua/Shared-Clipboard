@@ -67,6 +67,8 @@ const formatFileSize = (bytes) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 };
 
+const notificationAudio = typeof window !== 'undefined' ? new Audio('/notification-tone.mp3') : null;
+
 export default function Room({ username, setUsername }) {
   const { roomId } = useParams();
   const navigate = useNavigate();
@@ -96,6 +98,7 @@ export default function Room({ username, setUsername }) {
   };
 
    useEffect(() => {
+      window.scrollTo(0, 0);
       if (!username) return; 
      socket.connect();
     socket.on("connect", () => {
@@ -114,7 +117,7 @@ export default function Room({ username, setUsername }) {
     });
 
     socket.on("receive-clip", (clip) => {
-      setClips((prev) => [clip, ...prev].slice(0, 50));
+      setClips((prev) => [clip, ...prev].slice(0, 100));
 
       if (!isMutedRef.current && clip.sender !== username) {
         playNotificationSound();
@@ -238,44 +241,19 @@ export default function Room({ username, setUsername }) {
 
   const playNotificationSound = () => {
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-
-      // // Browser Autoplay Policy: resume audio context if suspended after page refresh
-      // if (ctx.state === "suspended") {
-      //   ctx.resume();
-      // }
-
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = "sine"; 
-
-      // Clear, musical 2-note chime: E5 (659Hz) -> C6 (1046Hz)
-      osc.frequency.setValueAtTime(659.25, now);
-      osc.frequency.setValueAtTime(1046.50, now + 0.12);
-
-      // Audible, crisp volume envelope
-      gain.gain.setValueAtTime(0.40, now);
-      gain.gain.setValueAtTime(0.40, now + 0.12);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 0.55);
+      if (notificationAudio) {
+        notificationAudio.currentTime = 0;
+        notificationAudio.play().catch(() => {});
+      }
     } catch (err) {
-      console.error("Audio playback error:", err);
+      console.error(err);
     }
   };
 
  
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200 relative">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200 relative overflow-x-hidden">
       <UsernameModal 
         isOpen={!username} 
         username="" 
@@ -285,48 +263,51 @@ export default function Room({ username, setUsername }) {
 
 { isQrCodeOpen &&
 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-      <div className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 p-6 shadow-xl relative">
+      <div className="w-full max-w-xs sm:max-w-sm bg-white rounded-2xl border border-slate-200 p-6 shadow-xl relative">
               <X onClick={()=> setIsQrCodeOpen(false)} className="absolute cursor-pointer top-3 right-3 w-5 h-5 text-black" />
-             <div className='mt-8 mb-6 flex items-center justify-center'> 
-               <QRCodeSVG value={window.location.href} size={256} />
+                <p className="mt-4 mb-2 text-center font-semibold text-slate-900">Scan the QR code to join the room</p>
+             <div className='mt-4 mb-4 flex items-center justify-center'> 
+               <QRCodeSVG value={window.location.href} size={220} />
                </div>
       </div>
     </div>
 }
 
-
-
-
-
-
       <div className={`flex-1 flex flex-col transition-all duration-200 ${!username ? 'pointer-events-none select-none blur-xs opacity-50' : ''}`}>
         <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
+          <div className="max-w-7xl mx-auto px-2.5 sm:px-6 h-14 flex items-center justify-between gap-1.5 sm:gap-4">
+            <div className="flex items-center gap-1.5 sm:gap-3 shrink min-w-0">
 
-              <span  className="flex items-center gap-2 text-slate-900 dark:text-white font-bold tracking-tight hover:opacity-80 transition">
-                <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shadow-indigo-500/20">
+              <span className="flex items-center gap-1.5 text-slate-900 dark:text-white font-bold tracking-tight shrink-0">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shadow-indigo-500/20">
                   <Clipboard className="w-4 h-4" />
                 </div>
-                <span className="hidden sm:inline text-sm font-bold">Shared Clipboard</span>
+                <span className="hidden md:inline text-sm font-bold">Shared Clipboard</span>
               </span>
 
-              <span className="text-slate-300 dark:text-slate-700">/</span>
+              <span className="hidden sm:inline text-slate-300 dark:text-slate-700">/</span>
 
-              <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg">
-                <span className="text-xs font-mono font-semibold text-indigo-600 dark:text-indigo-400">
+              <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 sm:px-2.5 py-1 rounded-lg shrink-0">
+                <span className="text-xs font-mono font-semibold text-indigo-600 dark:text-indigo-400 truncate max-w-[85px] sm:max-w-none">
                   #{roomId}
                 </span>
                 <button
                   onClick={handleCopyRoomLink}
-                  className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5 rounded transition cursor-pointer"
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5 rounded transition cursor-pointer shrink-0"
                   title="Copy Room Link"
                 >
                   {copiedRoomLink ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Share2 className="w-3.5 h-3.5" />}
                 </button>
               </div>
 
-              <QrCodeIcon className='cursor-pointer' onClick={()=> setIsQrCodeOpen(true)} />
+              <button
+                type="button"
+                onClick={() => setIsQrCodeOpen(true)}
+                className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900 rounded-lg transition cursor-pointer shrink-0"
+                title="Show QR Code"
+              >
+                <QrCodeIcon className="w-4 h-4" />
+              </button>
 
               <div className="hidden md:flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/50 dark:border-emerald-800/50">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -334,10 +315,10 @@ export default function Room({ username, setUsername }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <button 
                 type="button"
-                className="p-1.5 sm:p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 transition cursor-pointer"
+                className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 transition cursor-pointer"
                 title={isNotificationsMuted ? "Unmute Notifications" : "Mute Notifications"}
                 onClick={()=>setIsNotificationsMuted(!isNotificationsMuted)}
               >
@@ -346,7 +327,7 @@ export default function Room({ username, setUsername }) {
 
               <button 
                 type="button"
-                className="p-1.5 sm:p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 transition cursor-pointer"
+                className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-900 border border-slate-200 dark:border-slate-800 transition cursor-pointer"
                 title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
                 onClick={()=>{
                   if(theme === "dark"){
@@ -361,18 +342,18 @@ export default function Room({ username, setUsername }) {
                 {theme === "dark" ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
               </button>
 
-              <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
-                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 flex items-center justify-center font-semibold text-xs border border-indigo-200 dark:border-indigo-800">
-                  <User className="w-3.5 h-3.5" />
+              <div className="flex items-center gap-1.5 pl-1 sm:pl-2 border-l border-slate-200 dark:border-slate-800" title={`Logged in as ${username}`}>
+                <div className={`w-7 h-7 rounded-full ${getSenderColor(username || '')} text-white flex items-center justify-center font-bold text-xs shadow-2xs shrink-0`}>
+                  {(username || '?').charAt(0).toUpperCase()}
                 </div>
-                <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 hidden sm:inline">
+                <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 hidden sm:inline max-w-[90px] truncate">
                   {username}
                 </span>
               </div>
 
               <button
                 onClick={() => navigate('/')}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/50 border border-red-200/60 dark:border-red-800/60 transition cursor-pointer"
+                className="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg sm:rounded-xl text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/50 border border-red-200/60 dark:border-red-800/60 transition cursor-pointer"
                 title="Leave Room"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -383,8 +364,8 @@ export default function Room({ username, setUsername }) {
         </header>
 
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-6">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-3 sm:p-3.5 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <form onSubmit={handlePostClip} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-2.5 sm:p-3.5 border border-slate-200 dark:border-slate-800 shadow-xs">
+          <form onSubmit={handlePostClip} className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2 sm:gap-2.5">
             <div className="flex-1 relative flex items-center">
               <input 
                 type="file" 
@@ -398,9 +379,9 @@ export default function Room({ username, setUsername }) {
                 value={newContent}
                 disabled={!username}
                 onChange={(e) => setNewContent(e.target.value)}
-                placeholder="Paste your text, code snippet, or link here to share with the room..."
+                placeholder="Type or paste text, code, or link..."
                 rows={Math.min(Math.max(newContent.split('\n').length, 1), 6)}
-                className="w-full pl-3.5 pr-22 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 resize-none sleek-scrollbar transition-all font-sans disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full pl-3 pr-18 sm:pr-22 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 resize-none sleek-scrollbar transition-all font-sans min-h-[46px] disabled:opacity-50 disabled:cursor-not-allowed leading-relaxed"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -412,11 +393,11 @@ export default function Room({ username, setUsername }) {
                 type="button"
                 onClick={handlePasteFromClipboard}
                 disabled={!username}
-                className="absolute right-2 px-2.5 py-1 text-xs font-medium bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-600 shadow-2xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="absolute right-2 top-2.5 px-2 sm:px-2.5 py-1 text-xs font-medium bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-600 shadow-2xs transition flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Paste from device clipboard"
               >
                 <ClipboardPaste className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
-                <span>Paste</span>
+                <span className="text-[11px] sm:text-xs">Paste</span>
               </button>
             </div>
 
@@ -425,7 +406,7 @@ export default function Room({ username, setUsername }) {
                 type="button"
                 onClick={handlePaperclipClick}
                 disabled={!username}
-                className="p-2.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                className="p-2.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shrink-0"
                 title="Attach file or image (Max 5MB)"
               >
                 <Paperclip className="w-4 h-4" />
@@ -434,7 +415,7 @@ export default function Room({ username, setUsername }) {
               <button
                 type="submit"
                 disabled={!username || !newContent.trim()}
-                className="flex-1 sm:flex-initial px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-sm rounded-xl shadow-xs shadow-indigo-600/20 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="flex-1 sm:flex-initial px-4 sm:px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-sm rounded-xl shadow-xs shadow-indigo-600/20 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 <Send className="w-4 h-4" />
                 <span>Share Clip</span>

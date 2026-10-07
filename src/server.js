@@ -62,7 +62,7 @@ io.on("connection", (socket) => {
 
     room.clips.unshift(clip);
 
-    while (room.clips.length > 50) {
+    while (room.clips.length > 100) {
       room.clips.pop();
     }
 

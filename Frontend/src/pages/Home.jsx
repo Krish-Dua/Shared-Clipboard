@@ -14,6 +14,19 @@ import {
   X
 } from 'lucide-react';
 
+const COLORS = [
+  'bg-indigo-500', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500',
+  'bg-rose-500',   'bg-cyan-500',    'bg-teal-500',   'bg-blue-500'
+];
+
+const getSenderColor = (name = '') => {
+  let sum = 0;
+  for (let i = 0; i < name.length; i++) {
+    sum += name.charCodeAt(i);
+  }
+  return COLORS[sum % COLORS.length];
+};
+
 export default function Home({ username, setUsername }) {
   const [createRoomId, setCreateRoomId] = useState(username || '');
   const [joinRoomId, setJoinRoomId] = useState('');
@@ -123,7 +136,7 @@ export default function Home({ username, setUsername }) {
   };
 
   return (
-    <div className="h-screen flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-y-auto lg:overflow-hidden transition-colors duration-200">
+    <div className="min-h-screen flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200 overflow-x-hidden">
       <UsernameModal 
         isOpen={isModalOpen} 
         username={username} 
@@ -162,21 +175,32 @@ export default function Home({ username, setUsername }) {
               {theme === "dark" ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            <button
-              type="button"
-              onClick={toggleModal} 
-              className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800 cursor-pointer"
-            >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center font-semibold text-xs border border-slate-300/60 dark:border-slate-700/60">
-                <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            {username ? (
+              <button
+                type="button"
+                onClick={toggleModal} 
+                className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800 hover:opacity-90 transition cursor-pointer group"
+                title={`Logged in as ${username} (Click to change)`}
+              >
+                <div className={`w-8 h-8 rounded-xl ${getSenderColor(username)} text-white flex items-center justify-center font-bold text-xs shadow-xs group-hover:scale-105 transition-transform shrink-0`}>
+                  {username.charAt(0).toUpperCase()}
+                </div>
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 hidden sm:inline max-w-30 truncate">
+                  {username}
+                </span>
+              </button>
+            ) : (
+              <div className="pl-2 border-l border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={toggleModal} 
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold text-white bg-linear-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-sm shadow-indigo-500/25 active:scale-95 transition-all cursor-pointer"
+                  title="Set your display username"
+                >
+                  <span>Set Username</span>
+                </button>
               </div>
-               {username ? (<span className="text-sm font-medium rounded-full hidden sm:inline">
-                 {username}
-              </span>):(
-              <button className="text-sm font-medium bg-blue-700 px-2 py-1 text-white rounded-full hidden sm:inline">
-                 Register Username
-              </button>)}
-            </button> 
+            )} 
           </div>
         </div>
       </header>

@@ -24,6 +24,7 @@ import {
   X,
   BellOff,
   Bell,
+  UploadCloud,
 } from 'lucide-react';
 
 
@@ -84,6 +85,8 @@ export default function Room({ username, setUsername }) {
   isMutedRef.current = isNotificationsMuted;
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounter = useRef(0);
 
 
   if(theme === "dark"){
@@ -185,10 +188,8 @@ export default function Room({ username, setUsername }) {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-
+  const processFiles = (files) => {
+    if (!username) return;
     const MAX_SIZE = 5 * 1024 * 1024; // 5 MB limit
 
     files.forEach((file) => {
@@ -219,8 +220,52 @@ export default function Room({ username, setUsername }) {
 
       reader.readAsDataURL(file);
     });
+  };
 
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    processFiles(files);
     e.target.value = '';
+  };
+
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!username) return;
+    dragCounter.current += 1;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!username) return;
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0) {
+      setIsDragging(false);
+      dragCounter.current = 0;
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+    if (!username) return;
+
+    const droppedFiles = Array.from(e.dataTransfer.files || []);
+    if (droppedFiles.length > 0) {
+      processFiles(droppedFiles);
+    }
   };
 
   const handlePostClip = (e) => {
@@ -253,13 +298,37 @@ export default function Room({ username, setUsername }) {
  
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200 relative overflow-x-hidden">
+    <div 
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200 relative overflow-x-hidden"
+    >
       <UsernameModal 
         isOpen={!username} 
         username="" 
         onSave={handleSaveUsername} 
         onClose={() => navigate('/')} 
       />
+
+{isDragging && (
+  <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-none transition-all">
+    <div className="w-full max-w-md bg-white/95 dark:bg-slate-900/95 border-2 border-dashed border-indigo-500 rounded-3xl p-8 sm:p-10 shadow-2xl flex flex-col items-center justify-center text-center gap-4">
+      <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center animate-bounce shadow-sm">
+        <UploadCloud className="w-8 h-8" />
+      </div>
+      <div>
+        <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
+          Drop files anywhere to share
+        </h3>
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Images, documents, or PDFs up to 5MB each
+        </p>
+      </div>
+    </div>
+  </div>
+)}
 
 { isQrCodeOpen &&
 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">

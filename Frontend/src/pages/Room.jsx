@@ -399,10 +399,10 @@ export default function Room({ username, setUsername }) {
                 disabled={!username}
                 onChange={(e) => setNewContent(e.target.value)}
                 placeholder="Paste your text, code snippet, or link here to share with the room..."
-                rows={1}
-                className="w-full pl-3.5 pr-22 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 resize-none sleek-scrollbar transition font-sans min-h-10.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                rows={Math.min(Math.max(newContent.split('\n').length, 1), 6)}
+                className="w-full pl-3.5 pr-22 py-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 resize-none sleek-scrollbar transition-all font-sans disabled:opacity-50 disabled:cursor-not-allowed"
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     handlePostClip(e);
                   }

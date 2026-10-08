@@ -359,7 +359,7 @@ export default function Room({ username, setUsername }) {
               <span className="hidden sm:inline text-slate-300 dark:text-slate-700">/</span>
 
               <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 sm:px-2.5 py-1 rounded-lg shrink-0">
-                <span className="text-xs font-mono font-semibold text-indigo-600 dark:text-indigo-400 truncate max-w-[85px] sm:max-w-none">
+                <span className="text-xs font-mono font-semibold text-indigo-600 dark:text-indigo-400 truncate max-w-21.25 sm:max-w-none">
                   #{roomId}
                 </span>
                 <button
@@ -417,7 +417,7 @@ export default function Room({ username, setUsername }) {
                 <div className={`w-7 h-7 rounded-full ${getSenderColor(username || '')} text-white flex items-center justify-center font-bold text-xs shadow-2xs shrink-0`}>
                   {(username || '?').charAt(0).toUpperCase()}
                 </div>
-                <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 hidden sm:inline max-w-[90px] truncate">
+                <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 hidden sm:inline max-w-22.5 truncate">
                   {username}
                 </span>
               </div>
@@ -452,7 +452,7 @@ export default function Room({ username, setUsername }) {
                 onChange={(e) => setNewContent(e.target.value)}
                 placeholder="Type or paste text, code, or link..."
                 rows={Math.min(Math.max(newContent.split('\n').length, 1), 6)}
-                className="w-full pl-3 pr-18 sm:pr-22 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 resize-none sleek-scrollbar transition-all font-sans min-h-[46px] disabled:opacity-50 disabled:cursor-not-allowed leading-relaxed"
+                className="w-full pl-3 pr-18 sm:pr-22 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 resize-none sleek-scrollbar transition-all font-sans min-h-11.5 disabled:opacity-50 disabled:cursor-not-allowed leading-relaxed"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();

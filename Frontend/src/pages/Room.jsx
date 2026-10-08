@@ -104,53 +104,69 @@ export default function Room({ username, setUsername }) {
    useEffect(() => {
       window.scrollTo(0, 0);
       if (!username) return; 
-     socket.connect();
-    socket.on("connect", () => {
-      console.log("Connected:", socket.id);
-    });
 
-    socket.emit("join-room", { roomId, username });
+      const handleConnect = () => {
+        console.log("Connected / Reconnected:", socket.id);
+        socket.emit("join-room", { roomId, username });
+      };
 
-
-    socket.on("room-users-count", (count) => {
-      setUsersOnline(count);
-    });
-
-    socket.on("get-clips", (clips) => {
-      setClips(clips);
-      setIsLoading(false);
-    });
-
-    socket.on("receive-clip", (clip) => {
-      setClips((prev) => [clip, ...prev].slice(0, 100));
-
-      if (!isMutedRef.current && clip.sender !== username) {
-        playNotificationSound();
+      socket.connect();
+      socket.on("connect", handleConnect);
+      if (socket.connected) {
+        handleConnect();
       }
-    });
 
-    socket.on("room-not-found", ({ message }) => {
-      toast.error(message || `Room #${roomId} does not exist or has expired.`, {
-        toastId: 'room-not-found',
-        position: "top-right",
-        autoClose: 2000,
-        hideProgressBar: true,
-        closeOnClick: true,
-        pauseOnHover: false,
-        draggable: false,
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === "visible") {
+          if (!socket.connected) {
+            socket.connect();
+          } else {
+            socket.emit("join-room", { roomId, username });
+          }
+        }
+      };
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+
+      socket.on("room-users-count", (count) => {
+        setUsersOnline(count);
       });
-      navigate('/');
-    });
 
-    return () => {
-      socket.off("connect");
-      socket.off("room-users-count");
-      socket.off("get-clips");
-      socket.off("receive-clip");
-      socket.off("room-not-found");
-      socket.disconnect();
-    };
-  }, [roomId, username, navigate]);
+      socket.on("get-clips", (clips) => {
+        setClips(clips);
+        setIsLoading(false);
+      });
+
+      socket.on("receive-clip", (clip) => {
+        setClips((prev) => [clip, ...prev].slice(0, 100));
+
+        if (!isMutedRef.current && clip.sender !== username) {
+          playNotificationSound();
+        }
+      });
+
+      socket.on("room-not-found", ({ message }) => {
+        toast.error(message || `Room #${roomId} does not exist or has expired.`, {
+          toastId: 'room-not-found',
+          position: "top-right",
+          autoClose: 2000,
+          hideProgressBar: true,
+          closeOnClick: true,
+          pauseOnHover: false,
+          draggable: false,
+        });
+        navigate('/');
+      });
+
+      return () => {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+        socket.off("connect", handleConnect);
+        socket.off("room-users-count");
+        socket.off("get-clips");
+        socket.off("receive-clip");
+        socket.off("room-not-found");
+        socket.disconnect();
+      };
+   }, [roomId, username, navigate]);
 
   const handleCopy = (id, text) => {
     navigator.clipboard.writeText(text);

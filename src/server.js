@@ -48,13 +48,12 @@ io.on("connection", (socket) => {
 
     socket.join(roomId);
     socket.room = roomId;
-    socket.username=username
-    room.users.add(socket.username);  
+    socket.username = username;
+    room.users.set(socket.id, username);  
 
     socket.emit("get-clips", room.clips);
-    console.log(Array.from(room.users))
 
-    io.to(roomId).emit("room-users-count", Array.from(room.users));
+    io.to(roomId).emit("room-users-count", Array.from(room.users.values()));
   });
 
   socket.on("send-clip", (clip) => {
@@ -84,8 +83,8 @@ io.on("connection", (socket) => {
     if (socket.room) {
       const room = serverRooms.get(socket.room);
       if (room) {
-        room.users.delete(socket.username);
-        io.to(socket.room).emit("room-users-count", Array.from(room.users));
+        room.users.delete(socket.id);
+        io.to(socket.room).emit("room-users-count", Array.from(room.users.values()));
 
         if (room.users.size === 0) {
           room.cleanupTimeout = setTimeout(() => {
@@ -136,7 +135,7 @@ app.post("/api/checkRoomAvailability", (req, res) => {
     });
   }
 
-  serverRooms.set(roomId, { users: new Set(), clips: [] });
+  serverRooms.set(roomId, { users: new Map(), clips: [] });
 
   return res.status(200).json({
     success: true,

@@ -48,11 +48,13 @@ io.on("connection", (socket) => {
 
     socket.join(roomId);
     socket.room = roomId;
-    room.users.add(socket.id);  
+    socket.username=username
+    room.users.add(socket.username);  
 
     socket.emit("get-clips", room.clips);
+    console.log(Array.from(room.users))
 
-    io.to(roomId).emit("room-users-count", room.users.size);
+    io.to(roomId).emit("room-users-count", Array.from(room.users));
   });
 
   socket.on("send-clip", (clip) => {
@@ -82,8 +84,8 @@ io.on("connection", (socket) => {
     if (socket.room) {
       const room = serverRooms.get(socket.room);
       if (room) {
-        room.users.delete(socket.id);
-        io.to(socket.room).emit("room-users-count", room.users.size);
+        room.users.delete(socket.username);
+        io.to(socket.room).emit("room-users-count", Array.from(room.users));
 
         if (room.users.size === 0) {
           room.cleanupTimeout = setTimeout(() => {

@@ -22,6 +22,7 @@ import {
   ExternalLink,
   QrCodeIcon,
   X,
+  ChevronDown,
   BellOff,
   Bell,
   UploadCloud,
@@ -77,11 +78,12 @@ export default function Room({ username, setUsername }) {
   const [isLoading, setIsLoading] = useState(true);
   const [newContent, setNewContent] = useState('');
   const [copiedId, setCopiedId] = useState(null);
-  const [usersOnline, setUsersOnline] = useState(0);
+  const [usersOnline, setUsersOnline] = useState([]);
   const [copiedRoomLink, setCopiedRoomLink] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
   const [isQrCodeOpen, setIsQrCodeOpen] = useState(false);
   const [isNotificationsMuted, setIsNotificationsMuted] = useState(false);
+  const [showUsers, setShowUsers] = useState(false);
   const isMutedRef = useRef(false);
   isMutedRef.current = isNotificationsMuted;
   const fileInputRef = useRef(null);
@@ -127,8 +129,9 @@ export default function Room({ username, setUsername }) {
       };
       document.addEventListener("visibilitychange", handleVisibilityChange);
 
-      socket.on("room-users-count", (count) => {
-        setUsersOnline(count);
+      socket.on("room-users-count", (onlineUsers) => {
+        console.log("onlineUsers : ", onlineUsers);
+        setUsersOnline(onlineUsers);
       });
 
       socket.on("get-clips", (clips) => {
@@ -396,10 +399,40 @@ export default function Room({ username, setUsername }) {
                 <QrCodeIcon className="w-4 h-4" />
               </button>
 
-              <div className="hidden md:flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/50 dark:border-emerald-800/50">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>{usersOnline} Online</span>
+              <div className="flex select-none items-center flex-col relative">
+                <div onClick={() => setShowUsers(!showUsers)} className="cursor-pointer hidden md:flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/50 dark:border-emerald-800/50">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>{usersOnline.length} Online</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showUsers ? 'rotate-180' : ''}`} />
+                </div>
+              {showUsers &&
+                <div className="absolute top-8 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-1.5 max-h-48 overflow-y-auto sleek-scrollbar space-y-1 z-50">
+                  {usersOnline.map((user, index) => {
+                    const isMe = user === username;
+                    return (
+                      <div 
+                        key={index} 
+                        className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition"
+                      >
+                        <div className={`w-5 h-5 rounded-full ${getSenderColor(user || '')} text-white flex items-center justify-center font-bold text-[10px] shrink-0 shadow-2xs`}>
+                          {(user || '?').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex items-center justify-between min-w-0 flex-1 gap-1">
+                          <span className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
+                            {user}
+                          </span>
+                          {isMe && (
+                            <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded-md shrink-0 border border-indigo-200/40 dark:border-indigo-800/40">
+                              You
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>}
               </div>
+              
             </div>
 
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">

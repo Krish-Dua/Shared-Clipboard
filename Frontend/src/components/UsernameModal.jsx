@@ -13,7 +13,7 @@ export default function UsernameModal({ isOpen, username, onSave, onClose }) {
   const handleSave = (e) => {
     e.preventDefault();
     const clean = nameInput.trim();
-    if (clean.length >= 5 && clean.length <= 10) {
+    if (clean.length >= 3 && clean.length <= 10) {
       onSave(clean);
     }
   };
@@ -64,16 +64,16 @@ export default function UsernameModal({ isOpen, username, onSave, onClose }) {
                 Maximum 10 characters reached
               </p>
             )}
-            {nameInput.length > 0 && nameInput.length < 5 && (
+            {nameInput.length > 0 && nameInput.length < 3 && (
               <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-                Minimum 5 characters required
+                Minimum 3 characters required
               </p>
             )}
           </div>
 
           <button
             type="submit"
-            disabled={nameInput.trim().length < 5 || nameInput.trim().length > 10}
+            disabled={nameInput.trim().length < 3 || nameInput.trim().length > 10}
             className="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm rounded-xl transition cursor-pointer"
           >
             Save

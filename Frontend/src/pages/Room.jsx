@@ -26,6 +26,7 @@ import {
   BellOff,
   Bell,
   UploadCloud,
+  Trash2,
 } from 'lucide-react';
 
 
@@ -92,6 +93,9 @@ export default function Room({ username, setUsername }) {
   const dragCounter = useRef(0);
 
 
+  const creatorKey = localStorage.getItem(`room_creator_${roomId}`);
+  const isRoomCreator = !!creatorKey;
+
   if(theme === "dark"){
     document.documentElement.classList.add("dark");
   } else {
@@ -147,6 +151,10 @@ export default function Room({ username, setUsername }) {
         }
       });
 
+      socket.on("clip-deleted", ({ clipId }) => {
+        setClips((prev) => prev.filter((c) => c.id !== clipId));
+      });
+
       socket.on("room-not-found", ({ message }) => {
         toast.error(message || `Room #${roomId} does not exist or has expired.`, {
           toastId: 'room-not-found',
@@ -166,10 +174,15 @@ export default function Room({ username, setUsername }) {
         socket.off("room-users-count");
         socket.off("get-clips");
         socket.off("receive-clip");
+        socket.off("clip-deleted");
         socket.off("room-not-found");
         socket.disconnect();
       };
    }, [roomId, username, navigate]);
+
+  const handleDeleteClip = (clipId) => {
+    socket.emit("delete-clip", { clipId, creatorKey });
+  };
 
   const handleCopy = (id, text) => {
     navigator.clipboard.writeText(text);
@@ -604,6 +617,15 @@ export default function Room({ username, setUsername }) {
                     </div>
 
                     <div className="flex items-center gap-0.5">
+                      {isRoomCreator && (
+                        <button
+                          onClick={() => handleDeleteClip(clip.id)}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition cursor-pointer"
+                          title="Delete clip (Admin)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       {clip.file ? (
                         <a
                           href={clip.file.dataUrl}

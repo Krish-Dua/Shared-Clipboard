@@ -92,6 +92,9 @@ export default function Home({ username, setUsername }) {
       });
       return;
     }
+    if (data.creatorKey) {
+      localStorage.setItem(`room_creator_${trimmedId}`, data.creatorKey);
+    }
     navigate(`/room/${trimmedId}`);
   };
 

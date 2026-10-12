@@ -4,6 +4,7 @@ import { Server } from "socket.io";
 import dotenv from "dotenv";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import crypto from "crypto";
 
 import { notFound } from "./middlewares/notFound.middleware.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
@@ -37,7 +38,9 @@ io.on("connection", (socket) => {
     const room = serverRooms.get(roomId);
 
     if (!room) {
-      socket.emit("room-not-found", { message: `Room #${roomId} does not exist or has closed.` });
+      socket.emit("room-not-found", {
+        message: `Room #${roomId} does not exist or has closed.`,
+      });
       return;
     }
 
@@ -49,7 +52,7 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     socket.room = roomId;
     socket.username = username;
-    room.users.set(socket.id, username);  
+    room.users.set(socket.id, username);
 
     socket.emit("get-clips", room.clips);
 
@@ -77,6 +80,21 @@ io.on("connection", (socket) => {
     io.to(socket.room).emit("receive-clip", clip);
   });
 
+  socket.on("delete-clip", ({ clipId, creatorKey }) => {
+    if (!socket.room) return;
+    const room = serverRooms.get(socket.room);
+    if (!room) return;
+
+    const masterKey = process.env.MASTER_KEY;
+    const isAuthorized =
+      (room.creatorKey && creatorKey === room.creatorKey) ||
+      (Boolean(masterKey) && creatorKey === masterKey);
+    if (!isAuthorized) return;
+
+    room.clips = room.clips.filter((c) => c.id !== clipId);
+    io.to(socket.room).emit("clip-deleted", { clipId });
+  });
+
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
 
@@ -84,15 +102,21 @@ io.on("connection", (socket) => {
       const room = serverRooms.get(socket.room);
       if (room) {
         room.users.delete(socket.id);
-        io.to(socket.room).emit("room-users-count", Array.from(room.users.values()));
+        io.to(socket.room).emit(
+          "room-users-count",
+          Array.from(room.users.values()),
+        );
 
         if (room.users.size === 0) {
-          room.cleanupTimeout = setTimeout(() => {
-            const current = serverRooms.get(socket.room);
-            if (current && current.users.size === 0) {
-              serverRooms.delete(socket.room);
-            }
-          }, 1000 * 60 * 10);
+          room.cleanupTimeout = setTimeout(
+            () => {
+              const current = serverRooms.get(socket.room);
+              if (current && current.users.size === 0) {
+                serverRooms.delete(socket.room);
+              }
+            },
+            1000 * 60 * 10,
+          );
         }
       }
     }
@@ -113,7 +137,7 @@ app.use(express.static(path.join(__dirname, "../Frontend/dist")));
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({
-    status: "ok"
+    status: "ok",
   });
 });
 
@@ -135,11 +159,13 @@ app.post("/api/checkRoomAvailability", (req, res) => {
     });
   }
 
-  serverRooms.set(roomId, { users: new Map(), clips: [] });
+  const creatorKey = crypto.randomUUID();
+  serverRooms.set(roomId, { users: new Map(), clips: [], creatorKey });
 
   return res.status(200).json({
     success: true,
     message: `Room ID ${roomId} is available .`,
+    creatorKey,
   });
 });
 

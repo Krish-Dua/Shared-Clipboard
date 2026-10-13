@@ -71,6 +71,8 @@ const formatFileSize = (bytes) => {
 };
 
 const notificationAudio = typeof window !== 'undefined' ? new Audio('/notification-tone.mp3') : null;
+const userConnectAudio = typeof window !== 'undefined' ? new Audio('/userConnect.mp3') : null;
+const userDisconnectAudio = typeof window !== 'undefined' ? new Audio('/userDisconnect.mp3') : null;
 
 export default function Room({ username, setUsername }) {
   const { roomId } = useParams();
@@ -92,7 +94,6 @@ export default function Room({ username, setUsername }) {
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
 
-
   const creatorKey = localStorage.getItem(`room_creator_${roomId}`);
   const isRoomCreator = !!creatorKey;
 
@@ -105,6 +106,18 @@ export default function Room({ username, setUsername }) {
   const handleSaveUsername = (clean) => {
     setUsername(clean);
     localStorage.setItem("username", clean);
+  };
+
+  const playSound = (audio) => {
+    try {
+      if (audio && !isMutedRef.current) {
+        audio.currentTime = 0;
+        audio.volume = 1.0;
+        audio.play().catch(() => {});
+      }
+    } catch (err) {
+      console.error(err);
+    }
   };
 
    useEffect(() => {
@@ -135,7 +148,16 @@ export default function Room({ username, setUsername }) {
 
       socket.on("room-users-count", (onlineUsers) => {
         console.log("onlineUsers : ", onlineUsers);
-        setUsersOnline(onlineUsers);
+        setUsersOnline((prev) => {
+          if (prev.length > 0) {
+            if (onlineUsers.length > prev.length) {
+              playSound(userConnectAudio);
+            } else if (onlineUsers.length < prev.length) {
+              playSound(userDisconnectAudio);
+            }
+          }
+          return onlineUsers;
+        });
       });
 
       socket.on("get-clips", (clips) => {
@@ -319,14 +341,7 @@ export default function Room({ username, setUsername }) {
   };
 
   const playNotificationSound = () => {
-    try {
-      if (notificationAudio) {
-        notificationAudio.currentTime = 0;
-        notificationAudio.play().catch(() => {});
-      }
-    } catch (err) {
-      console.error(err);
-    }
+    playSound(notificationAudio);
   };
 
  

@@ -34,7 +34,7 @@ const serverRooms = new Map();
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  socket.on("join-room", ({ roomId, username }) => {
+  socket.on("join-room", ({ roomId, username, creatorKey }) => {
     const room = serverRooms.get(roomId);
 
     if (!room) {
@@ -53,6 +53,13 @@ io.on("connection", (socket) => {
     socket.room = roomId;
     socket.username = username;
     room.users.set(socket.id, username);
+
+    const masterKey = process.env.MASTER_KEY;
+    const isCreator = Boolean(
+      (room.creatorKey && creatorKey === room.creatorKey) ||
+      (Boolean(masterKey) && creatorKey === masterKey)
+    );
+    socket.emit("room-creator-status", { isCreator });
 
     socket.emit("get-clips", room.clips);
 

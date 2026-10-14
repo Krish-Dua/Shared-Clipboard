@@ -94,8 +94,7 @@ export default function Room({ username, setUsername }) {
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
 
-  const creatorKey = localStorage.getItem(`room_creator_${roomId}`);
-  const isRoomCreator = !!creatorKey;
+  const [isRoomCreator, setIsRoomCreator] = useState(false);
 
   if(theme === "dark"){
     document.documentElement.classList.add("dark");
@@ -126,7 +125,8 @@ export default function Room({ username, setUsername }) {
 
       const handleConnect = () => {
         console.log("Connected / Reconnected:", socket.id);
-        socket.emit("join-room", { roomId, username });
+        const creatorKey = localStorage.getItem(`room_creator_${roomId}`);
+        socket.emit("join-room", { roomId, username, creatorKey });
       };
 
       socket.connect();
@@ -140,7 +140,8 @@ export default function Room({ username, setUsername }) {
           if (!socket.connected) {
             socket.connect();
           } else {
-            socket.emit("join-room", { roomId, username });
+            const creatorKey = localStorage.getItem(`room_creator_${roomId}`);
+            socket.emit("join-room", { roomId, username, creatorKey });
           }
         }
       };
@@ -173,11 +174,19 @@ export default function Room({ username, setUsername }) {
         }
       });
 
+      socket.on("room-creator-status", ({ isCreator }) => {
+        setIsRoomCreator(isCreator);
+        if (!isCreator) {
+          localStorage.removeItem(`room_creator_${roomId}`);
+        }
+      });
+
       socket.on("clip-deleted", ({ clipId }) => {
         setClips((prev) => prev.filter((c) => c.id !== clipId));
       });
 
       socket.on("room-not-found", ({ message }) => {
+        localStorage.removeItem(`room_creator_${roomId}`);
         toast.error(message || `Room #${roomId} does not exist or has expired.`, {
           toastId: 'room-not-found',
           position: "top-right",
@@ -193,6 +202,7 @@ export default function Room({ username, setUsername }) {
       return () => {
         document.removeEventListener("visibilitychange", handleVisibilityChange);
         socket.off("connect", handleConnect);
+        socket.off("room-creator-status");
         socket.off("room-users-count");
         socket.off("get-clips");
         socket.off("receive-clip");
@@ -203,6 +213,7 @@ export default function Room({ username, setUsername }) {
    }, [roomId, username, navigate]);
 
   const handleDeleteClip = (clipId) => {
+    const creatorKey = localStorage.getItem(`room_creator_${roomId}`);
     socket.emit("delete-clip", { clipId, creatorKey });
   };
 

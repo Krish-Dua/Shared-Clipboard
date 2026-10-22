@@ -118,7 +118,19 @@ export default function Room({ username, setUsername }) {
       console.error(err);
     }
   };
-
+const handlePaste = (event) => {
+  if (!username) {
+    return
+  }
+  const pastedImages = [...event.clipboardData.files].filter(file =>
+    file.type.startsWith('image/')
+  )
+  if (pastedImages.length>0) {
+    event.preventDefault();
+    processFiles(pastedImages)
+    
+  }
+}
    useEffect(() => {
       window.scrollTo(0, 0);
       if (!username) return; 
@@ -199,6 +211,9 @@ export default function Room({ username, setUsername }) {
         navigate('/');
       });
 
+      
+  window.addEventListener("paste", handlePaste);
+
       return () => {
         document.removeEventListener("visibilitychange", handleVisibilityChange);
         socket.off("connect", handleConnect);
@@ -208,6 +223,7 @@ export default function Room({ username, setUsername }) {
         socket.off("receive-clip");
         socket.off("clip-deleted");
         socket.off("room-not-found");
+         window.removeEventListener("paste", handlePaste);
         socket.disconnect();
       };
    }, [roomId, username, navigate]);

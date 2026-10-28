@@ -707,6 +707,7 @@ const handlePaste = (event) => {
                             alt={clip.file.name || 'Shared Image'} 
                             loading="lazy"
                             decoding="async"
+                            draggable={false}
                             className="w-full max-h-72 object-contain rounded-xl"
                           />
                         </div>

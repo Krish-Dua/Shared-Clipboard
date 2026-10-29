@@ -26,7 +26,7 @@ const io = new Server(server, {
   cors: {
     origin: "*",
   },
-  maxHttpBufferSize: 1e8, // 100MB buffer limit so files/PDFs are not rejected by Socket.IO
+  maxHttpBufferSize: 5e8, // 500MB buffer limit to allow up to 300MB files with base64 overhead
 });
 
 const serverRooms = new Map();
@@ -77,11 +77,16 @@ io.on("connection", (socket) => {
       room.clips.pop();
     }
 
-    let fileCount = 0;
+    const MAX_ROOM_BYTES = 350 * 1024 * 1024; 
+    let totalFileBytes = 0;
     room.clips = room.clips.filter((c) => {
       if (!c.file) return true;
-      fileCount++;
-      return fileCount <= 10;
+      const size = c.file.size || 0;
+      if (totalFileBytes + size <= MAX_ROOM_BYTES) {
+        totalFileBytes += size;
+        return true;
+      }
+      return false; 
     });
 
     io.to(socket.room).emit("receive-clip", clip);

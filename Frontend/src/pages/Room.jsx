@@ -285,11 +285,11 @@ const handlePaste = (event) => {
 
   function processFiles(files) {
     if (!username) return;
-    const MAX_SIZE = 300 * 1024 * 1024; // 300 MB limit
+    const MAX_SIZE = 100 * 1024 * 1024; // 100 MB limit
 
     files.forEach((file) => {
       if (file.size > MAX_SIZE) {
-        toast.error(`"${file.name}" exceeds the 300MB size limit.`);
+        toast.error(`"${file.name}" exceeds the 100MB size limit.`);
         return;
       }
 
@@ -454,7 +454,7 @@ const handlePaste = (event) => {
           Drop files anywhere to share
         </h3>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Images, documents, or PDFs up to 300MB each
+          Images, documents, or PDFs up to 100MB each
         </p>
       </div>
     </div>
@@ -637,7 +637,7 @@ const handlePaste = (event) => {
                 onClick={handlePaperclipClick}
                 disabled={!username}
                 className="p-2.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shrink-0"
-                title="Attach file or image (Max 300MB)"
+                title="Attach file or image (Max 100MB)"
               >
                 <Paperclip className="w-4 h-4" />
               </button>

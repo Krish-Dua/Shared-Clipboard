@@ -26,7 +26,7 @@ const io = new Server(server, {
   cors: {
     origin: "*",
   },
-  maxHttpBufferSize: 5e8, // 500MB buffer limit to allow up to 300MB files with base64 overhead
+  maxHttpBufferSize: 2e8, // 200MB buffer limit to safely allow up to 100MB files with base64 overhead
 });
 
 const serverRooms = new Map();
@@ -71,13 +71,14 @@ io.on("connection", (socket) => {
     const room = serverRooms.get(socket.room);
     if (!room) return;
 
+    if (clip.file && clip.file.size > 100 * 1024 * 1024) return;
     room.clips.unshift(clip);
 
     while (room.clips.length > 100) {
       room.clips.pop();
     }
 
-    const MAX_ROOM_BYTES = 350 * 1024 * 1024; 
+    const MAX_ROOM_BYTES = 250 * 1024 * 1024; 
     let totalFileBytes = 0;
     room.clips = room.clips.filter((c) => {
       if (!c.file) return true;

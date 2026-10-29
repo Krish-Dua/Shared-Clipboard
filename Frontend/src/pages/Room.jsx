@@ -788,7 +788,7 @@ const handlePaste = (event) => {
                               <span className="text-xs font-semibold drop-shadow">
                                 {isSyncing ? "Syncing to room..." : `Uploading ${clip.progress || 0}%`}
                               </span>
-                              <div className="w-3/4 max-w-[160px] bg-white/20 h-1.5 rounded-full overflow-hidden shadow-inner">
+                              <div className="w-3/4 max-w-40 bg-white/20 h-1.5 rounded-full overflow-hidden shadow-inner">
                                 <div
                                   className="bg-white h-full rounded-full transition-all duration-150"
                                   style={{ width: `${clip.progress || 0}%` }}

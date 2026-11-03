@@ -149,6 +149,20 @@ io.on("connection", (socket) => {
       room.cleanupTimeout = null;
     }
 
+    // Clean up stale or duplicate sockets for this user reconnecting from the same IP
+    for (const [id, u] of room.users) {
+      if (id !== socket.id) {
+        const s = io.sockets.sockets.get(id);
+        if (!s || !s.connected || (u.username === username && u.ip === clientIp) || (isCreator && u.isCreator && u.ip === clientIp)) {
+          room.users.delete(id);
+          if (s) {
+            s.leave(roomId);
+            s.disconnect(true);
+          }
+        }
+      }
+    }
+
     socket.join(roomId);
     socket.room = roomId;
     socket.username = username;

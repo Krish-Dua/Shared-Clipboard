@@ -99,6 +99,26 @@ function deleteFileAndCleanEmptyRoomDir(dataUrl) {
   }
 }
 
+function isBanned(room, ip) {
+  if (!room?.bannedIps?.has(ip)) return false;
+  const expiresAt = room.bannedIps.get(ip);
+  if (Date.now() > expiresAt) {
+    room.bannedIps.delete(ip);
+    return false;
+  }
+  return true;
+}
+
+function broadcastRoomUsers(roomId) {
+  const room = serverRooms.get(roomId);
+  if (!room) return;
+  io.to(roomId).emit("room-users-count", Array.from(room.users.entries()).map(([id, u]) => ({
+    socketId: id,
+    username: u.username,
+    isAdmin: Boolean(u.isCreator),
+  })));
+}
+
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
@@ -112,6 +132,18 @@ io.on("connection", (socket) => {
       return;
     }
 
+    const masterKey = process.env.MASTER_KEY;
+    const isCreator = Boolean(
+      (room.creatorKey && creatorKey === room.creatorKey) ||
+      (Boolean(masterKey) && creatorKey === masterKey)
+    );
+
+    const clientIp = socket.handshake.headers["x-forwarded-for"]?.split(",")[0].trim() || socket.handshake.address;
+    if (!isCreator && isBanned(room, clientIp)) {
+      socket.emit("room-banned", { message: "You are currently timed out from this room." });
+      return;
+    }
+
     if (room.cleanupTimeout) {
       clearTimeout(room.cleanupTimeout);
       room.cleanupTimeout = null;
@@ -120,18 +152,11 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     socket.room = roomId;
     socket.username = username;
-    room.users.set(socket.id, username);
+    room.users.set(socket.id, { username, isCreator, ip: clientIp });
 
-    const masterKey = process.env.MASTER_KEY;
-    const isCreator = Boolean(
-      (room.creatorKey && creatorKey === room.creatorKey) ||
-      (Boolean(masterKey) && creatorKey === masterKey)
-    );
     socket.emit("room-creator-status", { isCreator });
-
     socket.emit("get-clips", room.clips);
-
-    io.to(roomId).emit("room-users-count", Array.from(room.users.values()));
+    broadcastRoomUsers(roomId);
   });
 
   socket.on("send-clip", (clip) => {
@@ -188,6 +213,28 @@ io.on("connection", (socket) => {
     io.to(socket.room).emit("clip-deleted", { clipId });
   });
 
+  socket.on("kick-user", ({ targetSocketId, durationMinutes, creatorKey }) => {
+    const room = serverRooms.get(socket.room);
+    if (!room || (room.creatorKey !== creatorKey && creatorKey !== process.env.MASTER_KEY)) return;
+
+    const targetSocket = io.sockets.sockets.get(targetSocketId);
+    if (!targetSocket) return;
+
+    const targetIp = targetSocket.handshake.headers["x-forwarded-for"]?.split(",")[0].trim() || targetSocket.handshake.address;
+    const duration = Number(durationMinutes);
+    const expiresAt = duration > 0 ? Date.now() + duration * 60 * 1000 : Infinity;
+
+    if (!room.bannedIps) room.bannedIps = new Map();
+    room.bannedIps.set(targetIp, expiresAt);
+
+    targetSocket.emit("kicked-from-room", {
+      message: duration > 0 ? `Timed out for ${duration} minutes by admin.` : "Permanently banned by admin.",
+    });
+    targetSocket.leave(socket.room);
+    room.users.delete(targetSocketId);
+    broadcastRoomUsers(socket.room);
+  });
+
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
 
@@ -195,10 +242,7 @@ io.on("connection", (socket) => {
       const room = serverRooms.get(socket.room);
       if (room) {
         room.users.delete(socket.id);
-        io.to(socket.room).emit(
-          "room-users-count",
-          Array.from(room.users.values()),
-        );
+        broadcastRoomUsers(socket.room);
 
         if (room.users.size === 0) {
           room.cleanupTimeout = setTimeout(
@@ -305,7 +349,12 @@ app.post("/api/checkRoomAvailability", (req, res) => {
   }
 
   const creatorKey = crypto.randomUUID();
-  serverRooms.set(roomId, { users: new Map(), clips: [], creatorKey });
+  serverRooms.set(roomId, {
+    users: new Map(),
+    clips: [],
+    creatorKey,
+    bannedIps: new Map(),
+  });
 
   return res.status(200).json({
     success: true,
@@ -316,26 +365,13 @@ app.post("/api/checkRoomAvailability", (req, res) => {
 
 app.post("/api/checkIfRoomExistToJoin", (req, res) => {
   const { roomId } = req.body;
-
   if (!roomId) {
-    return res.status(400).json({
-      success: false,
-      message: "Room ID is required .",
-    });
+    return res.status(400).json({ success: false, message: "Room ID is required." });
   }
-
-  const roomExists = serverRooms.has(roomId);
-  if (!roomExists) {
-    return res.status(200).json({
-      success: false,
-      message: `Room with ID ${roomId} doesn't exist .`,
-    });
+  if (!serverRooms.has(roomId)) {
+    return res.status(200).json({ success: false, message: `Room with ID ${roomId} doesn't exist.` });
   }
-
-  return res.status(200).json({
-    success: true,
-    message: `Room with ID ${roomId} is available to join .`,
-  });
+  return res.status(200).json({ success: true, message: `Room with ID ${roomId} is available to join.` });
 });
 
 app.get("{*path}", (req, res) => {

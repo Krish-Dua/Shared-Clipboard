@@ -28,6 +28,8 @@ import {
   UploadCloud,
   Trash2,
   Loader2,
+  Crown,
+  UserX,
 } from 'lucide-react';
 
 
@@ -96,6 +98,9 @@ export default function Room({ username, setUsername }) {
   const dragCounter = useRef(0);
 
   const [isRoomCreator, setIsRoomCreator] = useState(false);
+  const [currentSocketId, setCurrentSocketId] = useState(socket.id || null);
+  const [kickTarget, setKickTarget] = useState(null);
+  const [kickDuration, setKickDuration] = useState(5);
 
   if(theme === "dark"){
     document.documentElement.classList.add("dark");
@@ -133,6 +138,7 @@ const handlePaste = (event) => {
 
       const handleConnect = () => {
         console.log("Connected / Reconnected:", socket.id);
+        setCurrentSocketId(socket.id);
         const creatorKey = localStorage.getItem(`room_creator_${roomId}`);
         socket.emit("join-room", { roomId, username, creatorKey });
       };
@@ -148,6 +154,7 @@ const handlePaste = (event) => {
           if (!socket.connected) {
             socket.connect();
           } else {
+            setCurrentSocketId(socket.id);
             const creatorKey = localStorage.getItem(`room_creator_${roomId}`);
             socket.emit("join-room", { roomId, username, creatorKey });
           }
@@ -218,6 +225,32 @@ const handlePaste = (event) => {
         navigate('/');
       });
 
+      socket.on("kicked-from-room", ({ message }) => {
+        toast.error(message || "You have been kicked from this room.", {
+          toastId: 'kicked-from-room',
+          position: "top-right",
+          autoClose: 3500,
+          hideProgressBar: true,
+          closeOnClick: true,
+          pauseOnHover: false,
+          draggable: false,
+        });
+        navigate('/');
+      });
+
+      socket.on("room-banned", ({ message }) => {
+        toast.error(message || "You are currently banned/timed out from this room.", {
+          toastId: 'room-banned',
+          position: "top-right",
+          autoClose: 3500,
+          hideProgressBar: true,
+          closeOnClick: true,
+          pauseOnHover: false,
+          draggable: false,
+        });
+        navigate('/');
+      });
+
       
   window.addEventListener("paste", handlePaste);
 
@@ -230,10 +263,25 @@ const handlePaste = (event) => {
         socket.off("receive-clip");
         socket.off("clip-deleted");
         socket.off("room-not-found");
-         window.removeEventListener("paste", handlePaste);
+        socket.off("kicked-from-room");
+        socket.off("room-banned");
+        window.removeEventListener("paste", handlePaste);
         socket.disconnect();
       };
    }, [roomId, username, navigate]);
+
+  const handleConfirmKick = () => {
+    if (!kickTarget) return;
+    const creatorKey = localStorage.getItem(`room_creator_${roomId}`);
+    socket.emit("kick-user", {
+      targetSocketId: kickTarget.socketId,
+      durationMinutes: kickDuration,
+      creatorKey,
+    });
+    const label = kickDuration === 0 ? "permanently" : `for ${kickDuration} mins`;
+    toast.info(`Kicked ${kickTarget.username} (${label})`);
+    setKickTarget(null);
+  };
 
   const handleDeleteClip = (clipId) => {
     const creatorKey = localStorage.getItem(`room_creator_${roomId}`);
@@ -492,6 +540,73 @@ const handlePaste = (event) => {
     </div>
 }
 
+{kickTarget && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+    <div className="w-full max-w-xs bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-xl space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+          Kick {kickTarget.username}
+        </h3>
+        <button 
+          onClick={() => setKickTarget(null)} 
+          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg cursor-pointer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+        Select timeout duration:
+      </p>
+
+      <div className="space-y-1.5">
+        {[
+          { label: '5 minutes', value: 5 },
+          { label: '15 minutes', value: 15 },
+          { label: '1 hour', value: 60 },
+          { label: 'Permanent Ban', value: 0 },
+        ].map((opt) => (
+          <label
+            key={opt.value}
+            onClick={() => setKickDuration(opt.value)}
+            className={`flex items-center justify-between px-3 py-2 rounded-xl border cursor-pointer transition text-xs ${
+              kickDuration === opt.value
+                ? 'border-red-500 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 font-semibold'
+                : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+            }`}
+          >
+            <span>{opt.label}</span>
+            <input
+              type="radio"
+              name="kickDuration"
+              checked={kickDuration === opt.value}
+              onChange={() => setKickDuration(opt.value)}
+              className="accent-red-600"
+            />
+          </label>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <button
+          type="button"
+          onClick={() => setKickTarget(null)}
+          className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={handleConfirmKick}
+          className="px-3.5 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 active:scale-95 rounded-lg shadow-sm transition cursor-pointer"
+        >
+          Confirm Kick
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
       <div className={`flex-1 flex flex-col transition-all duration-200 ${!username ? 'pointer-events-none select-none blur-xs opacity-50' : ''}`}>
         <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md">
           <div className="max-w-7xl mx-auto px-2.5 sm:px-6 h-14 flex items-center justify-between gap-1.5 sm:gap-4">
@@ -529,32 +644,64 @@ const handlePaste = (event) => {
               </button>
 
               <div className="flex select-none items-center flex-col relative">
-                <div onClick={() => setShowUsers(!showUsers)} className="cursor-pointer hidden md:flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/50 dark:border-emerald-800/50">
+                <div 
+                  onClick={() => setShowUsers(!showUsers)} 
+                  className="cursor-pointer flex items-center gap-1 sm:gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium px-2 sm:px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/50 dark:border-emerald-800/50"
+                  title="Click to view online users"
+                >
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>{usersOnline.length} Online</span>
+                  <span>{usersOnline.length} <span className="hidden sm:inline">Online</span></span>
                   <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showUsers ? 'rotate-180' : ''}`} />
                 </div>
               {showUsers &&
-                <div className="absolute top-8 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-1.5 max-h-48 overflow-y-auto sleek-scrollbar space-y-1 z-50">
-                  {usersOnline.map((user, index) => {
-                    const isMe = user === username;
+                <div className="absolute top-8 left-0 sm:left-auto w-56 sm:w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-1.5 max-h-56 overflow-y-auto sleek-scrollbar space-y-1 z-50">
+                  {usersOnline.map((userItem, index) => {
+                    const userObj = typeof userItem === 'string'
+                      ? { socketId: '', username: userItem, isAdmin: false }
+                      : userItem;
+                    const name = userObj.username || 'Unknown';
+                    const isMe = userObj.socketId ? userObj.socketId === currentSocketId : name === username;
+                    const isAdmin = Boolean(userObj.isAdmin);
+                    const canKick = isRoomCreator && !isMe && !isAdmin;
+
                     return (
                       <div 
-                        key={index} 
-                        className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition"
+                        key={userObj.socketId || index} 
+                        className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition group"
                       >
-                        <div className={`w-5 h-5 rounded-full ${getSenderColor(user || '')} text-white flex items-center justify-center font-bold text-[10px] shrink-0 shadow-2xs`}>
-                          {(user || '?').charAt(0).toUpperCase()}
+                        <div className={`w-6 h-6 rounded-full ${getSenderColor(name)} text-white flex items-center justify-center font-bold text-[10px] shrink-0 shadow-2xs`}>
+                          {(name).charAt(0).toUpperCase()}
                         </div>
-                        <div className="flex items-center justify-between min-w-0 flex-1 gap-1">
+                        <div className="flex items-center justify-between min-w-0 flex-1 gap-1.5">
                           <span className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
-                            {user}
+                            {name}
                           </span>
-                          {isMe && (
-                            <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded-md shrink-0 border border-indigo-200/40 dark:border-indigo-800/40">
-                              You
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {isAdmin && (
+                              <span className="flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded-md border border-amber-200/40 dark:border-amber-800/40" title="Room Admin">
+                                <Crown className="w-2.5 h-2.5 text-amber-500" />
+                                Admin
+                              </span>
+                            )}
+                            {isMe && (
+                              <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded-md border border-indigo-200/40 dark:border-indigo-800/40">
+                                You
+                              </span>
+                            )}
+                            {canKick && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setKickTarget(userObj);
+                                }}
+                                className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-lg transition cursor-pointer"
+                                title={`Kick / Timeout ${name}`}
+                              >
+                                <UserX className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );

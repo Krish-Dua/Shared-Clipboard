@@ -120,18 +120,13 @@ export default function Room({ username, setUsername }) {
     }
   };
 const handlePaste = (event) => {
-  if (!username) {
-    return
-  }
-  const pastedImages = [...event.clipboardData.files].filter(file =>
-    file.type.startsWith('image/')
-  )
-  if (pastedImages.length>0) {
+  if (!username) return;
+  const pastedFiles = Array.from(event.clipboardData?.files || []);
+  if (pastedFiles.length > 0) {
     event.preventDefault();
-    processFiles(pastedImages)
-    
+    processFiles(pastedFiles);
   }
-}
+};
    useEffect(() => {
       window.scrollTo(0, 0);
       if (!username) return; 
@@ -285,24 +280,26 @@ const handlePaste = (event) => {
 
   function processFiles(files) {
     if (!username) return;
-    const MAX_SIZE = 100 * 1024 * 1024; // 100 MB limit
+    const MAX_SIZE = 500 * 1024 * 1024; // 500 MB limit
 
     files.forEach((file) => {
       if (file.size > MAX_SIZE) {
-        toast.error(`"${file.name}" exceeds the 100MB size limit.`);
+        toast.error(`"${file.name}" exceeds the 500MB size limit.`);
         return;
       }
 
       const clipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
       const isImage = file.type.startsWith('image/');
-      const previewUrl = isImage ? URL.createObjectURL(file) : null;
+      const isVideo = file.type.startsWith('video/');
+      const isMedia = isImage || isVideo;
+      const previewUrl = isMedia ? URL.createObjectURL(file) : null;
 
       // 1. Instantly inject ghost card
       setClips((prev) => [
         {
           id: clipId,
           sender: username,
-          type: isImage ? 'image' : 'file',
+          type: isImage ? 'image' : isVideo ? 'video' : 'file',
           content: '',
           file: {
             name: file.name,
@@ -317,10 +314,14 @@ const handlePaste = (event) => {
         ...prev,
       ]);
 
-      const reader = new FileReader();
+      // 2. Stream upload via multipart/form-data to /api/upload
+      const formData = new FormData();
+      formData.append('file', file);
 
-      // 2. Stream read progress
-      reader.onprogress = (e) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/api/upload?roomId=${encodeURIComponent(roomId)}`);
+
+      xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
           const progress = Math.round((e.loaded / e.total) * 100);
           setClips((prev) =>
@@ -329,34 +330,52 @@ const handlePaste = (event) => {
         }
       };
 
-      // 3. Emit completed clip to room
-      reader.onload = () => {
-        setClips((prev) =>
-          prev.map((c) => (c.id === clipId ? { ...c, progress: 100 } : c))
-        );
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            setClips((prev) =>
+              prev.map((c) => (c.id === clipId ? { ...c, progress: 100 } : c))
+            );
 
-        socket.emit("send-clip", {
-          id: clipId,
-          sender: username,
-          type: isImage ? 'image' : 'file',
-          content: '',
-          file: {
-            name: file.name,
-            size: file.size,
-            mimeType: file.type || 'application/octet-stream',
-            dataUrl: reader.result,
-          },
-          createdAt: Date.now(),
-        });
+            // 3. Emit lightweight clip (~200 bytes) over socket
+            socket.emit("send-clip", {
+              id: clipId,
+              sender: username,
+              type: isImage ? 'image' : isVideo ? 'video' : 'file',
+              content: '',
+              file: {
+                name: file.name,
+                size: file.size,
+                mimeType: file.type || 'application/octet-stream',
+                dataUrl: data.fileUrl,
+              },
+              createdAt: Date.now(),
+            });
+          } catch (err) {
+            toast.error(`Failed to process upload response for "${file.name}"`);
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
+            setClips((prev) => prev.filter((c) => c.id !== clipId));
+          }
+        } else {
+          try {
+            const errRes = JSON.parse(xhr.responseText);
+            toast.error(errRes.message || `Failed to upload "${file.name}"`);
+          } catch {
+            toast.error(`Failed to upload "${file.name}"`);
+          }
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+          setClips((prev) => prev.filter((c) => c.id !== clipId));
+        }
       };
 
-      reader.onerror = () => {
-        toast.error(`Failed to read "${file.name}"`);
+      xhr.onerror = () => {
+        toast.error(`Network error uploading "${file.name}"`);
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         setClips((prev) => prev.filter((c) => c.id !== clipId));
       };
 
-      reader.readAsDataURL(file);
+      xhr.send(formData);
     });
   }
 
@@ -454,7 +473,7 @@ const handlePaste = (event) => {
           Drop files anywhere to share
         </h3>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Images, documents, or PDFs up to 100MB each
+          Images, documents, or PDFs up to 500MB each
         </p>
       </div>
     </div>
@@ -637,7 +656,7 @@ const handlePaste = (event) => {
                 onClick={handlePaperclipClick}
                 disabled={!username}
                 className="p-2.5 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center shrink-0"
-                title="Attach file or image (Max 100MB)"
+                title="Attach file or image (Max 500MB)"
               >
                 <Paperclip className="w-4 h-4" />
               </button>
@@ -690,7 +709,8 @@ const handlePaste = (event) => {
             {clips.map((clip) => {
               const isCopied = copiedId === clip.id;
               const isImage = clip.type === 'image' || (clip.file && clip.file.mimeType?.startsWith('image/'));
-              const isFile = clip.type === 'file' || (clip.file && !isImage);
+              const isVideo = clip.type === 'video' || (clip.file && clip.file.mimeType?.startsWith('video/'));
+              const isFile = clip.type === 'file' || (clip.file && !isImage && !isVideo);
               const clipType = getClipType(clip.content || '');
               const isUploading = Boolean(clip.isUploading);
               const isSyncing = clip.progress >= 100;
@@ -738,7 +758,7 @@ const handlePaste = (event) => {
                           )}
                           {clip.file ? (
                             <a
-                              href={clip.file.dataUrl}
+                              href={`${clip.file.dataUrl}?download=true`}
                               download={clip.file.name || 'download'}
                               className="p-1 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition flex items-center gap-1 text-xs cursor-pointer"
                               title="Download file"
@@ -784,6 +804,38 @@ const handlePaste = (event) => {
                           />
                           {isUploading && (
                             <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-[1px] flex flex-col items-center justify-center p-3 text-white gap-2">
+                              <Loader2 className="w-6 h-6 animate-spin text-white drop-shadow" />
+                              <span className="text-xs font-semibold drop-shadow">
+                                {isSyncing ? "Syncing to room..." : `Uploading ${clip.progress || 0}%`}
+                              </span>
+                              <div className="w-3/4 max-w-40 bg-white/20 h-1.5 rounded-full overflow-hidden shadow-inner">
+                                <div
+                                  className="bg-white h-full rounded-full transition-all duration-150"
+                                  style={{ width: `${clip.progress || 0}%` }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                          <span className="truncate max-w-[70%] font-medium">{clip.file.name}</span>
+                          <span>{formatFileSize(clip.file.size)}</span>
+                        </div>
+                      </div>
+                    ) : isVideo && clip.file ? (
+                      <div className="space-y-2">
+                        <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
+                          <video
+                            src={clip.file.dataUrl}
+                            controls={!isUploading}
+                            playsInline
+                            preload="metadata"
+                            className={`w-full max-h-72 object-contain rounded-xl ${
+                              isUploading ? 'opacity-70 blur-[0.5px]' : ''
+                            }`}
+                          />
+                          {isUploading && (
+                            <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-[1px] flex flex-col items-center justify-center p-3 text-white gap-2 pointer-events-none">
                               <Loader2 className="w-6 h-6 animate-spin text-white drop-shadow" />
                               <span className="text-xs font-semibold drop-shadow">
                                 {isSyncing ? "Syncing to room..." : `Uploading ${clip.progress || 0}%`}

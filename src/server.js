@@ -19,16 +19,14 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 const app = express();
-
 const PORT = process.env.PORT || 3000;
-
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
     origin: "*",
   },
-  maxHttpBufferSize: 1e7, // 10MB socket buffer limit (large files stream over HTTP)
+  maxHttpBufferSize: 1e7, // 10MB socket buffer limit
 });
 
 // Root uploads directory: ./uploads/<roomId>/<filename>
@@ -85,7 +83,6 @@ function deleteFileAndCleanEmptyRoomDir(dataUrl) {
       }
     }
 
-    // If room directory has no more files left, delete the room directory as well
     if (fs.existsSync(roomDir)) {
       try {
         const remaining = fs.readdirSync(roomDir);
@@ -99,32 +96,24 @@ function deleteFileAndCleanEmptyRoomDir(dataUrl) {
   }
 }
 
-function isBanned(room, ip) {
-  if (!room?.bannedIps?.has(ip)) return false;
-  const expiresAt = room.bannedIps.get(ip);
-  if (Date.now() > expiresAt) {
-    room.bannedIps.delete(ip);
-    return false;
-  }
-  return true;
-}
-
 function broadcastRoomUsers(roomId) {
   const room = serverRooms.get(roomId);
   if (!room) return;
-  io.to(roomId).emit("room-users-count", Array.from(room.users.entries()).map(([id, u]) => ({
-    socketId: id,
-    username: u.username,
-    isAdmin: Boolean(u.isCreator),
-  })));
+  io.to(roomId).emit(
+    "room-users-count",
+    Array.from(room.users.entries()).map(([id, u]) => ({
+      socketId: id,
+      username: u.username,
+      isAdmin: Boolean(u.isCreator),
+    }))
+  );
 }
 
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  socket.on("join-room", ({ roomId, username, creatorKey }) => {
+  socket.on("join-room", ({ roomId, username, creatorKey, memberKey }) => {
     const room = serverRooms.get(roomId);
-
     if (!room) {
       socket.emit("room-not-found", {
         message: `Room #${roomId} does not exist or has closed.`,
@@ -138,10 +127,44 @@ io.on("connection", (socket) => {
       (Boolean(masterKey) && creatorKey === masterKey)
     );
 
-    const clientIp = socket.handshake.headers["x-forwarded-for"]?.split(",")[0].trim() || socket.handshake.address;
-    if (!isCreator && isBanned(room, clientIp)) {
-      socket.emit("room-banned", { message: "You are currently timed out from this room." });
+    if (!room.members) room.members = new Set();
+    if (!room.pendingKnocks) room.pendingKnocks = new Map();
+
+    const isApprovedMember = Boolean(memberKey && room.members.has(memberKey));
+
+    // If room is locked and user is neither creator nor approved member, hold in waiting room
+    if (room.isLocked && !isCreator && !isApprovedMember) {
+      socket.room = roomId;
+      socket.username = username;
+      socket.memberKey = memberKey;
+
+      const reqKey = memberKey || username;
+      const existingKnock = room.pendingKnocks.get(reqKey);
+      if (existingKnock?.disconnectTimeout) {
+        clearTimeout(existingKnock.disconnectTimeout);
+      }
+      const isNewRequest = !existingKnock;
+      room.pendingKnocks.set(reqKey, { socketId: socket.id, username, memberKey });
+
+      socket.emit("room-locked-waiting");
+
+      // Notify admin (include isNew flag so sound plays only once)
+      for (const [adminSocketId, u] of room.users) {
+        if (u.isCreator) {
+          io.to(adminSocketId).emit("knock-request", {
+            socketId: socket.id,
+            username,
+            memberKey,
+            isNew: isNewRequest,
+          });
+        }
+      }
       return;
+    }
+
+    // Auto-approve member if room is currently unlocked or they are creator
+    if (memberKey) {
+      room.members.add(memberKey);
     }
 
     if (room.cleanupTimeout) {
@@ -149,11 +172,11 @@ io.on("connection", (socket) => {
       room.cleanupTimeout = null;
     }
 
-    // Clean up stale or duplicate sockets for this user reconnecting from the same IP
+    // Clean up stale or duplicate sockets for this user reconnecting
     for (const [id, u] of room.users) {
       if (id !== socket.id) {
         const s = io.sockets.sockets.get(id);
-        if (!s || !s.connected || (u.username === username && u.ip === clientIp) || (isCreator && u.isCreator && u.ip === clientIp)) {
+        if (!s || !s.connected || u.username === username || (isCreator && u.isCreator)) {
           room.users.delete(id);
           if (s) {
             s.leave(roomId);
@@ -166,11 +189,113 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     socket.room = roomId;
     socket.username = username;
-    room.users.set(socket.id, { username, isCreator, ip: clientIp });
+    socket.memberKey = memberKey;
+    room.users.set(socket.id, { username, isCreator, memberKey });
 
     socket.emit("room-creator-status", { isCreator });
+    socket.emit("room-lock-status", { isLocked: Boolean(room.isLocked) });
     socket.emit("get-clips", room.clips);
     broadcastRoomUsers(roomId);
+
+    // If creator joined, replay any current pending knocks without sound
+    if (isCreator && room.pendingKnocks && room.pendingKnocks.size > 0) {
+      for (const req of room.pendingKnocks.values()) {
+        socket.emit("knock-request", {
+          socketId: req.socketId,
+          username: req.username,
+          memberKey: req.memberKey,
+          isNew: false,
+        });
+      }
+    }
+  });
+
+  socket.on("toggle-lock-room", ({ creatorKey }) => {
+    const room = serverRooms.get(socket.room);
+    if (!room || (room.creatorKey !== creatorKey && creatorKey !== process.env.MASTER_KEY)) return;
+
+    room.isLocked = !room.isLocked;
+    io.to(socket.room).emit("room-lock-status", { isLocked: room.isLocked });
+  });
+
+  socket.on("cancel-knock", ({ roomId, memberKey }) => {
+    const targetRoomId = socket.room || roomId;
+    const room = serverRooms.get(targetRoomId);
+    if (!room || !room.pendingKnocks) return;
+
+    const reqKey = memberKey || socket.memberKey || socket.id;
+    const pending = room.pendingKnocks.get(reqKey);
+    if (pending?.disconnectTimeout) {
+      clearTimeout(pending.disconnectTimeout);
+    }
+    room.pendingKnocks.delete(reqKey);
+
+    for (const [adminSocketId, u] of room.users) {
+      if (u.isCreator) {
+        io.to(adminSocketId).emit("knock-canceled", { socketId: socket.id, memberKey: reqKey });
+      }
+    }
+  });
+
+  socket.on("approve-knock", ({ targetSocketId, memberKey, creatorKey }) => {
+    const room = serverRooms.get(socket.room);
+    if (!room || (room.creatorKey !== creatorKey && creatorKey !== process.env.MASTER_KEY)) return;
+
+    // Find pending knock info
+    const reqKey = memberKey || Array.from(room.pendingKnocks?.entries() || []).find(([k, v]) => v.socketId === targetSocketId)?.[0];
+    const pendingItem = reqKey && room.pendingKnocks ? room.pendingKnocks.get(reqKey) : null;
+    const actualTargetSocketId = pendingItem?.socketId || targetSocketId;
+    const finalMemberKey = memberKey || pendingItem?.memberKey;
+
+    if (reqKey && room.pendingKnocks) {
+      if (pendingItem?.disconnectTimeout) {
+        clearTimeout(pendingItem.disconnectTimeout);
+      }
+      room.pendingKnocks.delete(reqKey);
+    }
+
+    // Permanently approve member for this room session
+    if (finalMemberKey) {
+      room.members.add(finalMemberKey);
+    }
+
+    let targetSocket = io.sockets.sockets.get(actualTargetSocketId);
+    if (targetSocket) {
+      if (targetSocket.memberKey) room.members.add(targetSocket.memberKey);
+      targetSocket.join(socket.room);
+      room.users.set(targetSocket.id, {
+        username: targetSocket.username,
+        isCreator: false,
+        memberKey: targetSocket.memberKey || finalMemberKey,
+      });
+
+      targetSocket.emit("knock-approved");
+      targetSocket.emit("room-creator-status", { isCreator: false });
+      targetSocket.emit("room-lock-status", { isLocked: Boolean(room.isLocked) });
+      targetSocket.emit("get-clips", room.clips);
+      broadcastRoomUsers(socket.room);
+    }
+  });
+
+  socket.on("deny-knock", ({ targetSocketId, memberKey, creatorKey }) => {
+    const room = serverRooms.get(socket.room);
+    if (!room || (room.creatorKey !== creatorKey && creatorKey !== process.env.MASTER_KEY)) return;
+
+    const reqKey = memberKey || Array.from(room.pendingKnocks?.entries() || []).find(([k, v]) => v.socketId === targetSocketId)?.[0];
+    const pendingItem = reqKey && room.pendingKnocks ? room.pendingKnocks.get(reqKey) : null;
+    const actualTargetSocketId = pendingItem?.socketId || targetSocketId;
+
+    if (reqKey && room.pendingKnocks) {
+      if (pendingItem?.disconnectTimeout) {
+        clearTimeout(pendingItem.disconnectTimeout);
+      }
+      room.pendingKnocks.delete(reqKey);
+    }
+
+    const targetSocket = io.sockets.sockets.get(actualTargetSocketId);
+    if (targetSocket) {
+      targetSocket.emit("knock-denied", { message: "The host declined your request to join." });
+    }
   });
 
   socket.on("send-clip", (clip) => {
@@ -185,7 +310,7 @@ io.on("connection", (socket) => {
       room.clips.pop();
     }
 
-    const MAX_ROOM_BYTES = 510 * 1024 * 1024; // 510MB total files per room
+    const MAX_ROOM_BYTES = 510 * 1024 * 1024;
     let totalFileBytes = 0;
     const evictedClipIds = [];
     room.clips = room.clips.filter((c) => {
@@ -195,13 +320,11 @@ io.on("connection", (socket) => {
         totalFileBytes += size;
         return true;
       }
-      // Over 510MB: discard older file and unlink from disk (and remove room folder if empty)
       evictedClipIds.push(c.id);
       deleteFileAndCleanEmptyRoomDir(c.file?.dataUrl);
       return false; 
     });
 
-    // Notify room users so evicted cards smoothly vanish from everyone's UI
     evictedClipIds.forEach((clipId) => {
       io.to(socket.room).emit("clip-deleted", { clipId });
     });
@@ -227,24 +350,22 @@ io.on("connection", (socket) => {
     io.to(socket.room).emit("clip-deleted", { clipId });
   });
 
-  socket.on("kick-user", ({ targetSocketId, durationMinutes, creatorKey }) => {
+  socket.on("kick-user", ({ targetSocketId, creatorKey }) => {
     const room = serverRooms.get(socket.room);
     if (!room || (room.creatorKey !== creatorKey && creatorKey !== process.env.MASTER_KEY)) return;
 
+    const targetUser = room.users.get(targetSocketId);
+    if (targetUser?.memberKey) {
+      room.members.delete(targetUser.memberKey);
+    }
+
     const targetSocket = io.sockets.sockets.get(targetSocketId);
-    if (!targetSocket) return;
+    if (targetSocket) {
+      if (targetSocket.memberKey) room.members.delete(targetSocket.memberKey);
+      targetSocket.emit("kicked-from-room", { message: "You were kicked by the room admin." });
+      targetSocket.leave(socket.room);
+    }
 
-    const targetIp = targetSocket.handshake.headers["x-forwarded-for"]?.split(",")[0].trim() || targetSocket.handshake.address;
-    const duration = Number(durationMinutes);
-    const expiresAt = duration > 0 ? Date.now() + duration * 60 * 1000 : Infinity;
-
-    if (!room.bannedIps) room.bannedIps = new Map();
-    room.bannedIps.set(targetIp, expiresAt);
-
-    targetSocket.emit("kicked-from-room", {
-      message: duration > 0 ? `Timed out for ${duration} minutes by admin.` : "Permanently banned by admin.",
-    });
-    targetSocket.leave(socket.room);
     room.users.delete(targetSocketId);
     broadcastRoomUsers(socket.room);
   });
@@ -255,6 +376,29 @@ io.on("connection", (socket) => {
     if (socket.room) {
       const room = serverRooms.get(socket.room);
       if (room) {
+        const reqKey = socket.memberKey || socket.username || socket.id;
+
+        // If this socket had a pending knock, provide a 4-second grace period for reload
+        if (room.pendingKnocks && room.pendingKnocks.has(reqKey)) {
+          const timeoutId = setTimeout(() => {
+            const currentRoom = serverRooms.get(socket.room);
+            if (currentRoom && currentRoom.pendingKnocks && currentRoom.pendingKnocks.has(reqKey)) {
+              const pending = currentRoom.pendingKnocks.get(reqKey);
+              if (pending?.socketId === socket.id) {
+                currentRoom.pendingKnocks.delete(reqKey);
+                for (const [adminSocketId, u] of currentRoom.users) {
+                  if (u.isCreator) {
+                    io.to(adminSocketId).emit("knock-canceled", { socketId: socket.id, memberKey: reqKey });
+                  }
+                }
+              }
+            }
+          }, 4000);
+
+          const pending = room.pendingKnocks.get(reqKey);
+          if (pending) pending.disconnectTimeout = timeoutId;
+        }
+
         room.users.delete(socket.id);
         broadcastRoomUsers(socket.room);
 
@@ -269,7 +413,7 @@ io.on("connection", (socket) => {
                 serverRooms.delete(socket.room);
               }
             },
-            1000 * 60 * 10,
+            1000 * 60 * 10
           );
         }
       }
@@ -278,21 +422,18 @@ io.on("connection", (socket) => {
 });
 
 app.use(cors());
-
 app.use(express.json());
 app.use(
   express.urlencoded({
     extended: true,
-  }),
+  })
 );
 app.use(cookieParser());
 
 app.use(express.static(path.join(__dirname, "../Frontend/dist")));
 
 app.get("/api/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-  });
+  res.status(200).json({ status: "ok" });
 });
 
 // Upload route with 500MB limit per file
@@ -313,7 +454,6 @@ app.post("/api/upload", (req, res) => {
     }
 
     const fileUrl = `/api/files/${safeRoomId}/${req.file.filename}`;
-
     return res.status(200).json({
       success: true,
       fileUrl,
@@ -336,7 +476,6 @@ app.get("/api/files/:roomId/:filename", (req, res) => {
   }
 
   if (req.query.download === "true") {
-    // Strip timestamp and hash prefix so user downloads clean original name
     const originalName = safeFilename.split("-").slice(2).join("-") || safeFilename;
     return res.download(filePath, originalName);
   }
@@ -367,7 +506,9 @@ app.post("/api/checkRoomAvailability", (req, res) => {
     users: new Map(),
     clips: [],
     creatorKey,
-    bannedIps: new Map(),
+    isLocked: false,
+    members: new Set(),
+    pendingKnocks: new Map(),
   });
 
   return res.status(200).json({

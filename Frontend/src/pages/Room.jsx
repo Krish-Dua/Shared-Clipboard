@@ -259,6 +259,7 @@ export default function Room({ username, setUsername }) {
           { socketId: requesterId, username: requesterName, memberKey: requesterMemberKey },
         ];
       });
+      setShowUsers(true);
       if (isNew) {
         playNotificationSound();
       }
@@ -293,6 +294,20 @@ export default function Room({ username, setUsername }) {
       navigate('/');
     });
 
+    socket.on("username-taken", ({ message }) => {
+      toast.error(message || "This username is already taken in the room.", {
+        toastId: 'username-taken',
+        position: "top-right",
+        autoClose: 3500,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: false,
+        draggable: false,
+      });
+      setUsername("");
+      localStorage.removeItem("username");
+    });
+
     socket.on("kicked-from-room", ({ message }) => {
       localStorage.removeItem(`room_member_${roomId}`);
       toast.error(message || "You have been kicked from this room.", {
@@ -312,6 +327,7 @@ export default function Room({ username, setUsername }) {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       socket.off("connect", handleConnect);
+      socket.off("username-taken");
       socket.off("room-creator-status");
       socket.off("room-lock-status");
       socket.off("room-locked-waiting");
@@ -635,46 +651,6 @@ export default function Room({ username, setUsername }) {
         </div>
       )}
 
-      {/* Floating Knock Requests Banner for Admin */}
-      {knockRequests.length > 0 && isRoomCreator && (
-        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full">
-          {knockRequests.map((req) => (
-            <div
-              key={req.memberKey || req.socketId}
-              className="bg-white dark:bg-slate-900 border-2 border-indigo-500 rounded-2xl p-3.5 shadow-2xl flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                  {req.username.charAt(0).toUpperCase()}
-                </div>
-                <div className="truncate">
-                  <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                    {req.username}
-                  </p>
-                  <p className="text-[11px] text-slate-400">Asking to join room</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleDenyKnock(req.socketId, req.memberKey)}
-                  className="px-2.5 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition cursor-pointer"
-                >
-                  Deny
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApproveKnock(req.socketId, req.memberKey)}
-                  className="px-3 py-1 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-lg shadow-sm transition cursor-pointer"
-                >
-                  Admit
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
       <div className={`flex-1 flex flex-col transition-all duration-200 ${!username || isWaitingApproval ? 'pointer-events-none select-none blur-xs opacity-50' : ''}`}>
         <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md">
           <div className="max-w-7xl mx-auto px-2.5 sm:px-6 h-14 flex items-center justify-between gap-1.5 sm:gap-4">
@@ -715,15 +691,67 @@ export default function Room({ username, setUsername }) {
               <div className="flex select-none items-center flex-col relative">
                 <div 
                   onClick={() => setShowUsers(!showUsers)} 
-                  className="cursor-pointer flex items-center gap-1 sm:gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium px-2 sm:px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/50 dark:border-emerald-800/50"
+                  className={`cursor-pointer flex items-center gap-1 sm:gap-1.5 text-xs font-medium px-2 sm:px-2.5 py-1 rounded-full border transition ${
+                    knockRequests.length > 0 && isRoomCreator
+                      ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 shadow-xs'
+                      : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200/50 dark:border-emerald-800/50'
+                  }`}
                   title="Click to view online users"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className={`w-1.5 h-1.5 rounded-full ${knockRequests.length > 0 && isRoomCreator ? 'bg-amber-500 animate-ping' : 'bg-emerald-500 animate-pulse'}`} />
                   <span>{usersOnline.length} <span className="hidden sm:inline">Online</span></span>
+                  {knockRequests.length > 0 && isRoomCreator && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white font-bold text-[10px] leading-none animate-pulse">
+                      {knockRequests.length} waiting
+                    </span>
+                  )}
                   <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showUsers ? 'rotate-180' : ''}`} />
                 </div>
                 {showUsers && (
-                  <div className="absolute top-8 left-0 sm:left-auto w-56 sm:w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-1.5 max-h-56 overflow-y-auto sleek-scrollbar space-y-1 z-50">
+                  <div className="absolute top-8 left-0 sm:left-auto w-64 sm:w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-1.5 max-h-72 overflow-y-auto sleek-scrollbar space-y-1 z-50">
+                    {/* Knock Requests Section for Host */}
+                    {knockRequests.length > 0 && isRoomCreator && (
+                      <div className="border-b border-slate-100 dark:border-slate-800 pb-1.5 mb-1.5 space-y-1">
+                        <div className="px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase text-amber-600 dark:text-amber-400 flex items-center justify-between">
+                          <span>Requests to Join</span>
+                          <span className="text-[10px] font-normal normal-case text-amber-500">
+                            {knockRequests.length} pending
+                          </span>
+                        </div>
+                        {knockRequests.map((req) => (
+                          <div
+                            key={req.memberKey || req.socketId}
+                            className="flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/40"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px] shrink-0 shadow-2xs">
+                                {req.username.charAt(0).toUpperCase()}
+                              </div>
+                              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                {req.username}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleDenyKnock(req.socketId, req.memberKey)}
+                                className="px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded-md transition cursor-pointer"
+                              >
+                                Deny
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleApproveKnock(req.socketId, req.memberKey)}
+                                className="px-2.5 py-0.5 text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-md shadow-xs transition cursor-pointer"
+                              >
+                                Admit
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     {usersOnline.map((userItem, index) => {
                       const userObj = typeof userItem === 'string'
                         ? { socketId: '', username: userItem, isAdmin: false }

@@ -121,6 +121,23 @@ io.on("connection", (socket) => {
       return;
     }
 
+    const cleanUsername = (username || "").trim();
+    if (!cleanUsername) return;
+
+    // Reject duplicate username if another active user in the room already has it
+    for (const [id, u] of room.users) {
+      if (id !== socket.id) {
+        const s = io.sockets.sockets.get(id);
+        const isSameSession = Boolean(memberKey && u.memberKey === memberKey);
+        if (s && s.connected && !isSameSession && u.username?.toLowerCase() === cleanUsername.toLowerCase()) {
+          socket.emit("username-taken", {
+            message: `The name "${cleanUsername}" is already taken in this room. Please choose another name.`,
+          });
+          return;
+        }
+      }
+    }
+
     const masterKey = process.env.MASTER_KEY;
     const isCreator = Boolean(
       (room.creatorKey && creatorKey === room.creatorKey) ||
@@ -135,16 +152,16 @@ io.on("connection", (socket) => {
     // If room is locked and user is neither creator nor approved member, hold in waiting room
     if (room.isLocked && !isCreator && !isApprovedMember) {
       socket.room = roomId;
-      socket.username = username;
+      socket.username = cleanUsername;
       socket.memberKey = memberKey;
 
-      const reqKey = memberKey || username;
+      const reqKey = memberKey || cleanUsername;
       const existingKnock = room.pendingKnocks.get(reqKey);
       if (existingKnock?.disconnectTimeout) {
         clearTimeout(existingKnock.disconnectTimeout);
       }
       const isNewRequest = !existingKnock;
-      room.pendingKnocks.set(reqKey, { socketId: socket.id, username, memberKey });
+      room.pendingKnocks.set(reqKey, { socketId: socket.id, username: cleanUsername, memberKey });
 
       socket.emit("room-locked-waiting");
 
@@ -153,7 +170,7 @@ io.on("connection", (socket) => {
         if (u.isCreator) {
           io.to(adminSocketId).emit("knock-request", {
             socketId: socket.id,
-            username,
+            username: cleanUsername,
             memberKey,
             isNew: isNewRequest,
           });
@@ -172,13 +189,14 @@ io.on("connection", (socket) => {
       room.cleanupTimeout = null;
     }
 
-    // Clean up stale or duplicate sockets for this user reconnecting
+    // Clean up stale sockets for this same member session if reconnecting, or disconnected sockets
     for (const [id, u] of room.users) {
       if (id !== socket.id) {
         const s = io.sockets.sockets.get(id);
-        if (!s || !s.connected || u.username === username || (isCreator && u.isCreator)) {
+        const isSameSession = Boolean(memberKey && u.memberKey === memberKey);
+        if (!s || !s.connected || isSameSession) {
           room.users.delete(id);
-          if (s) {
+          if (s && isSameSession) {
             s.leave(roomId);
             s.disconnect(true);
           }
@@ -188,9 +206,9 @@ io.on("connection", (socket) => {
 
     socket.join(roomId);
     socket.room = roomId;
-    socket.username = username;
+    socket.username = cleanUsername;
     socket.memberKey = memberKey;
-    room.users.set(socket.id, { username, isCreator, memberKey });
+    room.users.set(socket.id, { username: cleanUsername, isCreator, memberKey });
 
     socket.emit("room-creator-status", { isCreator });
     socket.emit("room-lock-status", { isLocked: Boolean(room.isLocked) });

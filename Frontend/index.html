@@ -13,6 +13,8 @@
       rel="stylesheet"
     />
     <script>
+      window.global = window;
+      window.process = { env: {} };
       if (localStorage.getItem("theme") === "dark") {
         document.documentElement.classList.add("dark");
       }

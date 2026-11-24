@@ -951,7 +951,7 @@ export default function Room({ username, setUsername }) {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            <div className="columns-1 sm:columns-2 lg:columns-3 gap-3.5">
               {clips.map((clip) => {
                 const isImage = clip.type === 'image';
                 const isVideo = clip.type === 'video';
@@ -962,13 +962,13 @@ export default function Room({ username, setUsername }) {
                 return (
                   <div
                     key={clip.id}
-                    className={`bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-xs flex flex-col justify-between gap-3 group relative transition hover:border-slate-300 dark:hover:border-slate-700 ${
+                    className={`break-inside-avoid mb-3.5 w-full bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-xs flex flex-col gap-3 group relative transition hover:border-slate-300 dark:hover:border-slate-700 max-h-96 overflow-hidden ${
                       isUploading
                         ? 'border-2 border-dashed border-indigo-400 dark:border-indigo-500/80 bg-indigo-50/20 dark:bg-indigo-950/20'
                         : 'border border-slate-200 dark:border-slate-800'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5 shrink-0">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full ${getSenderColor(clip.sender)} text-white flex items-center justify-center text-[10px] font-bold shrink-0 shadow-2xs`}>
                           {(clip.sender || '?').charAt(0).toUpperCase()}
@@ -1037,13 +1037,14 @@ export default function Room({ username, setUsername }) {
                       </div>
                     </div>
 
-                    <div className="flex-1 flex flex-col justify-center">
+                    <div className="flex-1 min-h-0 overflow-y-auto sleek-scrollbar flex flex-col justify-start">
                       {isImage && clip.file?.dataUrl ? (
                         <div className="space-y-2">
                           <div className="relative rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 max-h-60 flex items-center justify-center">
                             <img
                               src={clip.file.dataUrl}
                               alt={clip.file.name}
+                              draggable={false}
                               className="w-full h-auto max-h-60 object-contain"
                             />
                             {isUploading && (
@@ -1141,7 +1142,7 @@ export default function Room({ username, setUsername }) {
                           )}
                         </div>
                       ) : clipType === 'code' ? (
-                        <div className="bg-slate-950 rounded-xl p-3 text-slate-100 text-xs font-mono overflow-x-auto leading-relaxed border border-slate-800/80">
+                        <div className="bg-slate-950 rounded-xl p-3 text-slate-100 text-xs font-mono overflow-auto sleek-scrollbar leading-relaxed border border-slate-800/80">
                           <pre><code>{clip.content}</code></pre>
                         </div>
                       ) : clipType === 'link' ? (
@@ -1158,7 +1159,7 @@ export default function Room({ username, setUsername }) {
                           </a>
                         </div>
                       ) : (
-                        <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+                        <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed break-words font-sans">
                           {clip.content}
                         </p>
                       )}

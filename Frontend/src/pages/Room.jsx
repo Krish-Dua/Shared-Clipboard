@@ -1159,7 +1159,7 @@ export default function Room({ username, setUsername }) {
                           </a>
                         </div>
                       ) : (
-                        <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed break-words font-sans">
+                        <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed wrap-break-words font-sans">
                           {clip.content}
                         </p>
                       )}

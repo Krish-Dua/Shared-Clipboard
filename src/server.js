@@ -321,7 +321,10 @@ io.on("connection", (socket) => {
     const room = serverRooms.get(socket.room);
     if (!room) return;
 
-    if (clip.file && clip.file.size > 500 * 1024 * 1024) return;
+    if (clip.file && !clip.file.isP2P && clip.file.size > 500 * 1024 * 1024) return;
+    if (clip.file?.isP2P) {
+      clip.senderSocketId = socket.id;
+    }
     room.clips.unshift(clip);
 
     while (room.clips.length > 100) {
@@ -332,7 +335,7 @@ io.on("connection", (socket) => {
     let totalFileBytes = 0;
     const evictedClipIds = [];
     room.clips = room.clips.filter((c) => {
-      if (!c.file) return true;
+      if (!c.file || c.file.isP2P) return true;
       const size = c.file.size || 0;
       if (totalFileBytes + size <= MAX_ROOM_BYTES) {
         totalFileBytes += size;
@@ -348,6 +351,24 @@ io.on("connection", (socket) => {
     });
 
     io.to(socket.room).emit("receive-clip", clip);
+  });
+
+  socket.on("p2p-request-file", ({ clipId, senderName }) => {
+    if (!socket.room) return;
+    socket.to(socket.room).emit("p2p-request-file", {
+      clipId,
+      senderName,
+      requesterSocketId: socket.id,
+      requesterName: socket.username,
+    });
+  });
+
+  socket.on("p2p-signal", ({ targetSocketId, signalData, clipId }) => {
+    io.to(targetSocketId).emit("p2p-signal", {
+      senderSocketId: socket.id,
+      signalData,
+      clipId,
+    });
   });
 
   socket.on("delete-clip", ({ clipId, creatorKey }) => {
@@ -394,6 +415,19 @@ io.on("connection", (socket) => {
     if (socket.room) {
       const room = serverRooms.get(socket.room);
       if (room) {
+        // Auto-remove any P2P clips hosted by this socket since files live only in their browser tab
+        const p2pClips = room.clips.filter(
+          (c) => c.file?.isP2P && (c.senderSocketId === socket.id || c.sender === socket.username)
+        );
+        if (p2pClips.length > 0) {
+          room.clips = room.clips.filter(
+            (c) => !(c.file?.isP2P && (c.senderSocketId === socket.id || c.sender === socket.username))
+          );
+          p2pClips.forEach((c) => {
+            io.to(socket.room).emit("clip-deleted", { clipId: c.id });
+          });
+        }
+
         const reqKey = socket.memberKey || socket.username || socket.id;
 
         // If this socket had a pending knock, provide a 4-second grace period for reload

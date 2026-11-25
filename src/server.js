@@ -322,6 +322,9 @@ io.on("connection", (socket) => {
     if (!room) return;
 
     if (clip.file && !clip.file.isP2P && clip.file.size > 500 * 1024 * 1024) return;
+    if (clip.file?.isP2P) {
+      clip.senderSocketId = socket.id;
+    }
     room.clips.unshift(clip);
 
     while (room.clips.length > 100) {
@@ -412,6 +415,19 @@ io.on("connection", (socket) => {
     if (socket.room) {
       const room = serverRooms.get(socket.room);
       if (room) {
+        // Auto-remove any P2P clips hosted by this socket since files live only in their browser tab
+        const p2pClips = room.clips.filter(
+          (c) => c.file?.isP2P && (c.senderSocketId === socket.id || c.sender === socket.username)
+        );
+        if (p2pClips.length > 0) {
+          room.clips = room.clips.filter(
+            (c) => !(c.file?.isP2P && (c.senderSocketId === socket.id || c.sender === socket.username))
+          );
+          p2pClips.forEach((c) => {
+            io.to(socket.room).emit("clip-deleted", { clipId: c.id });
+          });
+        }
+
         const reqKey = socket.memberKey || socket.username || socket.id;
 
         // If this socket had a pending knock, provide a 4-second grace period for reload

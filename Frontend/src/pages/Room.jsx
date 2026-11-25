@@ -104,6 +104,7 @@ export default function Room({ username, setUsername }) {
   const [knockRequests, setKnockRequests] = useState([]);
   const localP2PFiles = useRef(new Map());
   const activePeers = useRef(new Map());
+  const receivingBuffers = useRef(new Map());
   const [p2pProgress, setP2PProgress] = useState({});
   const clipsRef = useRef([]);
   clipsRef.current = clips;
@@ -281,8 +282,39 @@ export default function Room({ username, setUsername }) {
       );
     });
 
+    const cancelDownload = (clipId, peerKey) => {
+      const chunks = receivingBuffers.current.get(clipId);
+      if (chunks) {
+        chunks.length = 0;
+        receivingBuffers.current.delete(clipId);
+      }
+      const p1 = activePeers.current.get(clipId);
+      if (p1) {
+        try { p1.close(); } catch {}
+        activePeers.current.delete(clipId);
+      }
+      if (peerKey) {
+        const p2 = activePeers.current.get(peerKey);
+        if (p2) {
+          try { p2.close(); } catch {}
+          activePeers.current.delete(peerKey);
+        }
+      }
+      setP2PProgress((prev) => {
+        if (prev[clipId]?.status === 'downloading' || prev[clipId]?.status === 'connecting') {
+          toast.warn("Download cancelled: Sender disconnected.", { toastId: `p2p-cancel-${clipId}` });
+          const next = { ...prev };
+          delete next[clipId];
+          return next;
+        }
+        return prev;
+      });
+    };
+
     socket.on("clip-deleted", ({ clipId }) => {
       setClips((prev) => prev.filter((c) => c.id !== clipId));
+      localP2PFiles.current.delete(clipId);
+      cancelDownload(clipId);
     });
 
     socket.on("room-not-found", ({ message }) => {
@@ -328,6 +360,15 @@ export default function Room({ username, setUsername }) {
       navigate('/');
     });
 
+    const saveBlob = (chunks, name, type) => {
+      const blob = new Blob(chunks, { type: type || "application/octet-stream" });
+      chunks.length = 0;
+      const url = URL.createObjectURL(blob);
+      const a = Object.assign(document.createElement("a"), { href: url, download: name });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    };
+
     socket.on("p2p-request-file", async ({ clipId, senderName, requesterSocketId }) => {
       if (senderName !== username) return;
       const file = localP2PFiles.current.get(clipId);
@@ -335,25 +376,18 @@ export default function Room({ username, setUsername }) {
 
       const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
       activePeers.current.set(`${clipId}-${requesterSocketId}`, pc);
-
-      pc.onicecandidate = (e) => {
-        if (e.candidate) socket.emit("p2p-signal", { targetSocketId: requesterSocketId, signalData: { candidate: e.candidate }, clipId });
-      };
+      pc.onicecandidate = (e) => e.candidate && socket.emit("p2p-signal", { targetSocketId: requesterSocketId, signalData: { candidate: e.candidate }, clipId });
 
       const dc = pc.createDataChannel("fileTransfer");
       dc.binaryType = "arraybuffer";
       dc.bufferedAmountLowThreshold = 1024 * 1024;
-
       dc.onopen = async () => {
-        const CHUNK_SIZE = 64 * 1024;
+        const CHUNK = 64 * 1024;
         let offset = 0;
         while (offset < file.size) {
-          if (dc.bufferedAmount > 4 * 1024 * 1024) {
-            await new Promise((r) => { dc.onbufferedamountlow = r; });
-          }
-          const slice = file.slice(offset, offset + CHUNK_SIZE);
-          const buf = await slice.arrayBuffer();
+          if (dc.bufferedAmount > 4 * 1024 * 1024) await new Promise((r) => { dc.onbufferedamountlow = r; });
           if (dc.readyState !== "open") return;
+          const buf = await file.slice(offset, offset + CHUNK).arrayBuffer();
           dc.send(buf);
           offset += buf.byteLength;
         }
@@ -366,62 +400,50 @@ export default function Room({ username, setUsername }) {
     });
 
     socket.on("p2p-signal", async ({ senderSocketId, signalData, clipId }) => {
-      let peer = activePeers.current.get(clipId) || activePeers.current.get(`${clipId}-${senderSocketId}`);
+      const peerKey = `${clipId}-${senderSocketId}`;
+      let peer = activePeers.current.get(clipId) || activePeers.current.get(peerKey);
 
-      if (signalData.sdp && signalData.sdp.type === "offer") {
+      if (signalData.sdp?.type === "offer") {
         const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
         activePeers.current.set(clipId, pc);
-        activePeers.current.set(`${clipId}-${senderSocketId}`, pc);
+        activePeers.current.set(peerKey, pc);
+        pc.onicecandidate = (e) => e.candidate && socket.emit("p2p-signal", { targetSocketId: senderSocketId, signalData: { candidate: e.candidate }, clipId });
 
-        pc.onicecandidate = (e) => {
-          if (e.candidate) socket.emit("p2p-signal", { targetSocketId: senderSocketId, signalData: { candidate: e.candidate }, clipId });
+        pc.oniceconnectionstatechange = () => {
+          if (["disconnected", "failed", "closed"].includes(pc.iceConnectionState)) {
+            cancelDownload(clipId, peerKey);
+          }
         };
 
-        const receivedChunks = [];
-        let receivedBytes = 0;
-
+        const chunks = [];
+        receivingBuffers.current.set(clipId, chunks);
+        let bytes = 0;
         pc.ondatachannel = (e) => {
           const dc = e.channel;
           dc.binaryType = "arraybuffer";
-
-          dc.onmessage = (event) => {
-            if (typeof event.data === "string") {
+          dc.onmessage = (evt) => {
+            if (typeof evt.data === "string") {
               try {
-                const msg = JSON.parse(event.data);
-                if (msg.type === "EOF") {
+                if (JSON.parse(evt.data).type === "EOF") {
                   const clip = clipsRef.current.find((c) => c.id === clipId);
                   const fileName = clip?.file?.name || "downloaded-file";
-                  const mimeType = clip?.file?.mimeType || "application/octet-stream";
-
-                  const blob = new Blob(receivedChunks, { type: mimeType });
-                  receivedChunks.length = 0; // Immediately clear chunks from RAM
-
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = fileName;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  setTimeout(() => URL.revokeObjectURL(url), 10000);
-
+                  saveBlob(chunks, fileName, clip?.file?.mimeType);
+                  receivingBuffers.current.delete(clipId);
                   setP2PProgress((prev) => ({ ...prev, [clipId]: { progress: 100, status: "completed" } }));
                   toast.success(`"${fileName}" downloaded!`);
                   try { pc.close(); } catch {}
                   activePeers.current.delete(clipId);
-                  activePeers.current.delete(`${clipId}-${senderSocketId}`);
+                  activePeers.current.delete(peerKey);
                   return;
                 }
               } catch {}
             }
-
-            receivedChunks.push(event.data);
-            receivedBytes += event.data.byteLength || 0;
-            const clip = clipsRef.current.find((c) => c.id === clipId);
-            const total = clip?.file?.size || 1;
+            chunks.push(evt.data);
+            bytes += evt.data.byteLength || 0;
+            const total = clipsRef.current.find((c) => c.id === clipId)?.file?.size || 1;
             setP2PProgress((prev) => ({
               ...prev,
-              [clipId]: { progress: Math.min(99, Math.round((receivedBytes / total) * 100)), status: "downloading" }
+              [clipId]: { progress: Math.min(99, Math.round((bytes / total) * 100)), status: "downloading" }
             }));
           };
         };
@@ -434,11 +456,8 @@ export default function Room({ username, setUsername }) {
       }
 
       if (peer) {
-        if (signalData.sdp) {
-          await peer.setRemoteDescription(new RTCSessionDescription(signalData.sdp));
-        } else if (signalData.candidate) {
-          await peer.addIceCandidate(new RTCIceCandidate(signalData.candidate)).catch(() => {});
-        }
+        if (signalData.sdp) await peer.setRemoteDescription(new RTCSessionDescription(signalData.sdp));
+        if (signalData.candidate) await peer.addIceCandidate(new RTCIceCandidate(signalData.candidate)).catch(() => {});
       }
     });
 
@@ -467,6 +486,11 @@ export default function Room({ username, setUsername }) {
         try { p.close(); } catch {}
       });
       activePeers.current.clear();
+      localP2PFiles.current.clear();
+      receivingBuffers.current.forEach((chunks) => {
+        chunks.length = 0;
+      });
+      receivingBuffers.current.clear();
       window.removeEventListener("paste", handlePaste);
       socket.disconnect();
     };
@@ -1109,7 +1133,7 @@ export default function Room({ username, setUsername }) {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            <div className="columns-1 sm:columns-2 lg:columns-3 gap-3.5">
               {clips.map((clip) => {
                 const isImage = clip.type === 'image';
                 const isVideo = clip.type === 'video';
@@ -1120,13 +1144,13 @@ export default function Room({ username, setUsername }) {
                 return (
                   <div
                     key={clip.id}
-                    className={`bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-xs flex flex-col justify-between gap-3 group relative transition hover:border-slate-300 dark:hover:border-slate-700 ${
+                    className={`break-inside-avoid mb-3.5 w-full bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-xs flex flex-col gap-3 group relative transition-all duration-200 hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 max-h-96 overflow-hidden ${
                       isUploading
                         ? 'border-2 border-dashed border-indigo-400 dark:border-indigo-500/80 bg-indigo-50/20 dark:bg-indigo-950/20'
                         : 'border border-slate-200 dark:border-slate-800'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-2.5 shrink-0">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full ${getSenderColor(clip.sender)} text-white flex items-center justify-center text-[10px] font-bold shrink-0 shadow-2xs`}>
                           {(clip.sender || '?').charAt(0).toUpperCase()}
@@ -1195,69 +1219,62 @@ export default function Room({ username, setUsername }) {
                       </div>
                     </div>
 
-                    <div className="flex-1 flex flex-col justify-center">
+                    <div className="flex-1 min-h-0 overflow-y-auto sleek-scrollbar flex flex-col justify-start">
                       {clip.file?.isP2P ? (
-                        <div className="space-y-2.5">
-                          <div className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/60 dark:bg-emerald-950/30 flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200 dark:border-emerald-800/50">
-                              <Zap className="w-5 h-5 text-emerald-500 fill-emerald-500/20" />
+                        <div className="space-y-2">
+                          <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700/60 flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/50">
+                              <FileText className="w-4 h-4" />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                                  {clip.file.name}
-                                </p>
-                                <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-200/70 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded shrink-0">
-                                  P2P Direct
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
-                                {formatFileSize(clip.file.size)} • Direct P2P Stream
+                              <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                                {clip.file.name}
+                              </p>
+                              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                                {formatFileSize(clip.file.size)}
                               </p>
                             </div>
                           </div>
 
                           {clip.sender === username ? (
-                            <div className="p-2 rounded-lg bg-emerald-50/40 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                              <span>Hosting file on your device (Keep this tab open)</span>
-                            </div>
+                            <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                              Hosting file • Keep tab open
+                            </p>
                           ) : (
-                            <div className="pt-0.5">
+                            <div>
                               {p2pProgress[clip.id]?.status === 'downloading' ? (
                                 <div className="space-y-1.5 p-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
                                   <div className="flex justify-between text-[11px] font-medium text-slate-700 dark:text-slate-300">
                                     <span className="flex items-center gap-1.5">
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
-                                      Receiving via P2P...
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
+                                      Receiving...
                                     </span>
-                                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                    <span className="font-mono font-semibold text-indigo-600 dark:text-indigo-400">
                                       {p2pProgress[clip.id]?.progress || 0}%
                                     </span>
                                   </div>
-                                  <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                                  <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
                                     <div
-                                      className="bg-emerald-500 h-full rounded-full transition-all duration-150"
+                                      className="bg-indigo-600 dark:bg-indigo-500 h-full rounded-full transition-all duration-150"
                                       style={{ width: `${p2pProgress[clip.id]?.progress || 0}%` }}
                                     />
                                   </div>
                                 </div>
                               ) : p2pProgress[clip.id]?.status === 'connecting' ? (
-                                <div className="space-y-1.5 p-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                                  <div className="flex items-center gap-2 text-[11px] font-medium text-slate-700 dark:text-slate-300">
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
-                                    <span>Connecting to sender via P2P...</span>
-                                  </div>
+                                <div className="p-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
+                                  <span>Connecting to sender...</span>
                                 </div>
                               ) : p2pProgress[clip.id]?.status === 'completed' ? (
-                                <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-between border border-emerald-200 dark:border-emerald-800/50">
-                                  <span className="flex items-center gap-1.5">
-                                    <Check className="w-4 h-4 text-emerald-500" /> Downloaded successfully
+                                <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-xs text-slate-600 dark:text-slate-300 font-medium flex items-center justify-between border border-slate-200 dark:border-slate-700">
+                                  <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+                                    <Check className="w-3.5 h-3.5" /> Downloaded
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => handleP2PDownload(clip)}
-                                    className="text-[11px] text-emerald-700 dark:text-emerald-300 hover:underline cursor-pointer"
+                                    className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
                                   >
                                     Re-download
                                   </button>
@@ -1266,10 +1283,10 @@ export default function Room({ username, setUsername }) {
                                 <button
                                   type="button"
                                   onClick={() => handleP2PDownload(clip)}
-                                  className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-semibold rounded-xl shadow-xs flex items-center justify-center gap-2 transition cursor-pointer"
+                                  className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white text-xs font-semibold rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
                                 >
                                   <Download className="w-3.5 h-3.5" />
-                                  Download via P2P ({formatFileSize(clip.file.size)})
+                                  Download via P2P
                                 </button>
                               )}
                             </div>
@@ -1363,17 +1380,6 @@ export default function Room({ username, setUsername }) {
                             </div>
                           </div>
 
-                          {clip.file?.dataUrl && !isUploading && (
-                            <a
-                              href={`${clip.file.dataUrl}?download=true`}
-                              download={clip.file.name}
-                              className="w-full py-2 px-3 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              Download File
-                            </a>
-                          )}
-
                           {isUploading && (
                             <div className="px-1 space-y-1">
                               <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
@@ -1390,7 +1396,7 @@ export default function Room({ username, setUsername }) {
                           )}
                         </div>
                       ) : clipType === 'code' ? (
-                        <div className="bg-slate-950 rounded-xl p-3 text-slate-100 text-xs font-mono overflow-x-auto leading-relaxed border border-slate-800/80">
+                        <div className="bg-slate-950 rounded-xl p-3 text-slate-100 text-xs font-mono overflow-auto sleek-scrollbar leading-relaxed border border-slate-800/80 max-h-64">
                           <pre><code>{clip.content}</code></pre>
                         </div>
                       ) : clipType === 'link' ? (
@@ -1407,7 +1413,7 @@ export default function Room({ username, setUsername }) {
                           </a>
                         </div>
                       ) : (
-                        <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+                        <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed break-words font-sans">
                           {clip.content}
                         </p>
                       )}
